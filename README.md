@@ -300,4 +300,4 @@ TRON_PRIVATE_KEY=xxx TEST_STAKING=1 npx vitest run tests/core/services/staking.t
 
 ## License
 
-MIT
+MIT License Copyright (c) 2026 JustLend

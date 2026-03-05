@@ -106,10 +106,12 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 {
   "mcpServers": {
     "justlend": {
+      "type": "stdio",
       "command": "npx",
-      "args": ["tsx", "/path/to/mcp-server-justlend/src/index.ts"],
+      "args": ["tsx", "mcp-server-justlend"],
       "env": {
-        "TRONGRID_API_KEY": "your_key"
+        "TRONGRID_API_KEY": "SET_VIA_SYSTEM_ENV",
+        "TRON_PRIVATE_KEY": "SET_VIA_SYSTEM_ENV"
       }
     }
   }
@@ -124,8 +126,14 @@ Add to `.cursor/mcp.json`:
 {
   "mcpServers": {
     "justlend": {
+      "type": "stdio",
       "command": "npx",
-      "args": ["tsx", "/path/to/mcp-server-justlend/src/index.ts"]
+      "args": ["tsx", "mcp-server-justlend"]
+      "env": {
+        "TRONGRID_API_KEY": "SET_VIA_SYSTEM_ENV",
+        "TRON_PRIVATE_KEY": "SET_VIA_SYSTEM_ENV"
+      }
+
     }
   }
 }

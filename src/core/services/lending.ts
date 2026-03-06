@@ -492,6 +492,8 @@ export interface ResourceEstimation {
 const DATA_HEX_PROTOBUF_EXTRA = 3;
 const SIGNATURE_PER_BANDWIDTH = 67;
 const MAX_RESULT_SIZE_IN_TX = 64;
+/** Protobuf encoding overhead for fee_limit field (field 18 tag: 2 bytes + varint value: ~4 bytes) */
+const FEE_LIMIT_PROTOBUF_EXTRA = 6;
 
 /**
  * Encode ABI parameters to hex string for direct API calls.
@@ -581,7 +583,7 @@ async function trySimulateEnergy(
       const rawDataHex = simData.transaction?.raw_data_hex;
       if (rawDataHex) {
         const rawDataBytes = Buffer.byteLength(rawDataHex, 'hex');
-        bandwidth = rawDataBytes + DATA_HEX_PROTOBUF_EXTRA + SIGNATURE_PER_BANDWIDTH + MAX_RESULT_SIZE_IN_TX;
+        bandwidth = rawDataBytes + DATA_HEX_PROTOBUF_EXTRA + SIGNATURE_PER_BANDWIDTH + MAX_RESULT_SIZE_IN_TX + FEE_LIMIT_PROTOBUF_EXTRA;
       }
     } catch { /* ignore */ }
   } else {
@@ -992,11 +994,20 @@ export async function simulateOperationResources(
         break;
       }
       case "repay": {
-        const amountRaw = BigInt(Math.floor(parseFloat(amount) * 10 ** info!.underlyingDecimals));
-        if (isTRX) {
-          result = await sim(info!.address, "repayBorrow()", [], { callValue: amountRaw.toString() });
+        let repayRaw: bigint;
+        const isMax = amount === "-1" || amount.toLowerCase() === "max";
+        if (isMax) {
+          // Query actual borrow balance for simulation
+          const jToken = tronWeb.contract(JTOKEN_ABI, info!.address);
+          const borrowBal = BigInt(await jToken.methods.borrowBalanceStored(ownerAddress).call());
+          repayRaw = borrowBal > 0n ? borrowBal + borrowBal / 1000n : BigInt(10 ** info!.underlyingDecimals);
         } else {
-          result = await sim(info!.address, "repayBorrow(uint256)", [{ type: "uint256", value: amountRaw.toString() }]);
+          repayRaw = BigInt(Math.floor(parseFloat(amount) * 10 ** info!.underlyingDecimals));
+        }
+        if (isTRX) {
+          result = await sim(info!.address, "repayBorrow()", [], { callValue: repayRaw.toString() });
+        } else {
+          result = await sim(info!.address, "repayBorrow(uint256)", [{ type: "uint256", value: repayRaw.toString() }]);
         }
         break;
       }

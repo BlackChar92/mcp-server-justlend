@@ -15,7 +15,7 @@
 
 import { getTronWeb, getWallet } from "./clients.js";
 import { getJustLendAddresses, getJTokenInfo, getAllJTokens, type JTokenInfo } from "../chains.js";
-import { JTOKEN_ABI, JTRX_MINT_ABI, COMPTROLLER_ABI, TRC20_ABI } from "../abis.js";
+import { JTOKEN_ABI, JTRX_MINT_ABI, JTRX_REPAY_ABI, COMPTROLLER_ABI, TRC20_ABI, PRICE_ORACLE_ABI } from "../abis.js";
 
 const MAX_UINT256 = "115792089237316195423570985008687907853269984665640564039457584007913129639935";
 
@@ -156,6 +156,126 @@ export async function borrow(
   const info = resolveJToken(jTokenSymbol, network);
   const tronWeb = getWallet(privateKey, network);
   const amountRaw = BigInt(Math.floor(parseFloat(amount) * 10 ** info.underlyingDecimals));
+  const walletAddress = tronWeb.defaultAddress.base58;
+
+  // Check borrowing capacity by manually computing collateral breakdown.
+  // For each collateral market: adjustedCollateral = supplyBalance * exchangeRate * price * collateralFactor
+  // totalBorrowable (USD) = sum(adjustedCollateral) - sum(existingBorrows in USD)
+  // Then convert to target token units via oracle price.
+  const addresses = getJustLendAddresses(network);
+  const comptroller = tronWeb.contract(COMPTROLLER_ABI, addresses.comptroller);
+  const oracle = tronWeb.contract(PRICE_ORACLE_ABI, addresses.priceOracle);
+
+  // Get collateral markets the user has entered
+  const assetsIn: string[] = await comptroller.methods.getAssetsIn(walletAddress).call();
+
+  if (assetsIn.length === 0) {
+    throw new Error(
+      `No borrowing capacity. You need to supply assets and enable them as collateral (enter_market) before borrowing.`
+    );
+  }
+
+  // Compute collateral breakdown for each entered market
+  interface CollateralDetail {
+    symbol: string;
+    supplyBalance: number;    // human-readable underlying units
+    supplyValueUSD: number;
+    collateralFactor: number; // e.g. 0.75
+    adjustedValueUSD: number; // supplyValueUSD * collateralFactor
+    borrowBalanceUSD: number; // existing borrow in this market
+  }
+
+  const MANTISSA_18 = BigInt(1e18);
+  const collateralDetails: CollateralDetail[] = [];
+  let totalAdjustedCollateralUSD = 0;
+  let totalBorrowUSD = 0;
+
+  for (const asset of assetsIn) {
+    try {
+      const assetInfo = getJTokenInfo(asset, network);
+      const jToken = tronWeb.contract(JTOKEN_ABI, asset);
+      const snapshot = await jToken.methods.getAccountSnapshot(walletAddress).call();
+
+      const jTokenBalance = BigInt(snapshot[1] ?? snapshot.jTokenBalance ?? 0);
+      const borrowBalance = BigInt(snapshot[2] ?? snapshot.borrowBalance ?? 0);
+      const exchangeRateMantissa = BigInt(snapshot[3] ?? snapshot.exchangeRateMantissa ?? 0);
+
+      // supplyBalance in underlying raw units = jTokenBalance * exchangeRate / 1e18
+      const supplyBalanceRaw = jTokenBalance * exchangeRateMantissa / MANTISSA_18;
+
+      // Get oracle price (scaled to 36 - underlyingDecimals)
+      const assetPriceRaw = BigInt(await oracle.methods.getUnderlyingPrice(asset).call());
+      const assetDecimals = assetInfo ? assetInfo.underlyingDecimals : 18;
+      const assetPriceScale = 10 ** (36 - assetDecimals);
+      const assetPriceUSD = Number(assetPriceRaw) / assetPriceScale;
+
+      // Get collateral factor
+      const marketInfo = await comptroller.methods.markets(asset).call();
+      const cf = Number(BigInt(marketInfo.collateralFactorMantissa || marketInfo[1])) / 1e18;
+
+      const supplyBalance = Number(supplyBalanceRaw) / 10 ** assetDecimals;
+      const supplyValueUSD = supplyBalance * assetPriceUSD;
+      const adjustedValueUSD = supplyValueUSD * cf;
+      const borrowBalanceUSD = Number(borrowBalance) / 10 ** assetDecimals * assetPriceUSD;
+
+      totalAdjustedCollateralUSD += adjustedValueUSD;
+      totalBorrowUSD += borrowBalanceUSD;
+
+      const label = assetInfo ? assetInfo.underlyingSymbol : asset;
+      collateralDetails.push({
+        symbol: label,
+        supplyBalance,
+        supplyValueUSD,
+        collateralFactor: cf,
+        adjustedValueUSD,
+        borrowBalanceUSD,
+      });
+    } catch { /* skip unavailable markets */ }
+  }
+
+  const availableLiquidityUSD = totalAdjustedCollateralUSD - totalBorrowUSD;
+
+  if (availableLiquidityUSD <= 0) {
+    const breakdown = collateralDetails.map(d =>
+      `${d.symbol}: supply=$${d.supplyValueUSD.toFixed(2)} × CF ${(d.collateralFactor * 100).toFixed(0)}% = $${d.adjustedValueUSD.toFixed(2)}` +
+      (d.borrowBalanceUSD > 0 ? `, borrow=$${d.borrowBalanceUSD.toFixed(2)}` : "")
+    ).join("; ");
+
+    throw new Error(
+      `No borrowing capacity. Total adjusted collateral: $${totalAdjustedCollateralUSD.toFixed(2)}, ` +
+      `total borrows: $${totalBorrowUSD.toFixed(2)}, available: $${availableLiquidityUSD.toFixed(2)}. ` +
+      `Breakdown: [${breakdown}]. ` +
+      `Supply more collateral or repay existing borrows first.`
+    );
+  }
+
+  // Get target token price to convert USD liquidity to token amount
+  const priceRaw = BigInt(await oracle.methods.getUnderlyingPrice(info.address).call());
+
+  if (priceRaw === 0n) {
+    throw new Error(`Cannot fetch price for ${info.underlyingSymbol}. Unable to verify borrowing capacity.`);
+  }
+
+  const priceScale = BigInt(10) ** BigInt(36 - info.underlyingDecimals);
+  const targetPriceUSD = Number(priceRaw) / Number(priceScale);
+  const maxBorrowable = availableLiquidityUSD / targetPriceUSD;
+  const maxBorrowableRaw = BigInt(Math.floor(maxBorrowable * 10 ** info.underlyingDecimals));
+
+  if (amountRaw > maxBorrowableRaw) {
+    const breakdown = collateralDetails.map(d =>
+      `${d.symbol}: supply=$${d.supplyValueUSD.toFixed(2)} × CF ${(d.collateralFactor * 100).toFixed(0)}% = $${d.adjustedValueUSD.toFixed(2)}` +
+      (d.borrowBalanceUSD > 0 ? `, borrow=$${d.borrowBalanceUSD.toFixed(2)}` : "")
+    ).join("; ");
+
+    throw new Error(
+      `Insufficient borrowing capacity. Requested: ${amount} ${info.underlyingSymbol} (~$${(parseFloat(amount) * targetPriceUSD).toFixed(2)}), ` +
+      `max borrowable: ~${maxBorrowable.toFixed(info.underlyingDecimals > 6 ? 6 : info.underlyingDecimals)} ${info.underlyingSymbol} ` +
+      `(~$${availableLiquidityUSD.toFixed(2)}). ` +
+      `${info.underlyingSymbol} price: $${targetPriceUSD.toFixed(6)}. ` +
+      `Collateral breakdown: [${breakdown}]. ` +
+      `Supply more collateral or reduce borrow amount.`
+    );
+  }
 
   const contract = tronWeb.contract(JTOKEN_ABI, info.address);
   const txID = await contract.methods.borrow(amountRaw.toString()).send();
@@ -186,22 +306,27 @@ export async function repay(
 
   const isMax = amount === "-1" || amount.toLowerCase() === "max";
 
-  if (info.underlyingSymbol === "TRX" || !info.underlying) {
-    // For TRX repay, we need the exact borrow balance
-    const contract = tronWeb.contract(JTOKEN_ABI, info.address);
-    const walletAddress = tronWeb.defaultAddress.base58;
-    const borrowBal = BigInt(await contract.methods.borrowBalanceStored(walletAddress).call());
+  // Check borrow balance first — avoid wasting energy if there's nothing to repay
+  const contract = tronWeb.contract(JTOKEN_ABI, info.address);
+  const walletAddress = tronWeb.defaultAddress.base58;
+  const borrowBal = BigInt(await contract.methods.borrowBalanceStored(walletAddress).call());
 
+  if (borrowBal === 0n) {
+    throw new Error(`No outstanding ${info.underlyingSymbol} borrow on ${jTokenSymbol}. Nothing to repay.`);
+  }
+
+  if (info.underlyingSymbol === "TRX" || !info.underlying) {
     // Add a small buffer (0.1%) for accrued interest
     const repayAmount = isMax
       ? borrowBal + borrowBal / 1000n
       : BigInt(Math.floor(parseFloat(amount) * 10 ** info.underlyingDecimals));
 
-    const txID = await contract.methods.repayBorrow().send({ callValue: repayAmount.toString() });
+    // jTRX repayBorrow() is payable with no args — need separate ABI (like jTRX mint)
+    const trxContract = tronWeb.contract(JTRX_REPAY_ABI, info.address);
+    const txID = await trxContract.methods.repayBorrow().send({ callValue: repayAmount.toString() });
     return { txID, jTokenSymbol, amount: isMax ? "max" : amount, message: `Repaid ${isMax ? "all" : amount} TRX to ${jTokenSymbol}` };
   } else {
     const repayAmount = isMax ? MAX_UINT256 : BigInt(Math.floor(parseFloat(amount) * 10 ** info.underlyingDecimals)).toString();
-    const contract = tronWeb.contract(JTOKEN_ABI, info.address);
     const txID = await contract.methods.repayBorrow(repayAmount).send();
     return { txID, jTokenSymbol, amount: isMax ? "max" : amount, message: `Repaid ${isMax ? "all" : amount} ${info.underlyingSymbol} to ${jTokenSymbol}` };
   }
@@ -317,7 +442,7 @@ const TYPICAL_RESOURCES: Record<string, { energy: number; bandwidth: number }> =
   supply_trc20:   { energy: 100000, bandwidth: 310 },
   withdraw:       { energy: 90000,  bandwidth: 300 },
   withdraw_all:   { energy: 90000,  bandwidth: 300 },
-  borrow:         { energy: 100000, bandwidth: 310 },
+  borrow:         { energy: 100000, bandwidth: 313 },
   repay_trx:      { energy: 80000,  bandwidth: 280 },
   repay_trc20:    { energy: 90000,  bandwidth: 320 },
   enter_market:   { energy: 80000,  bandwidth: 300 },
@@ -327,9 +452,9 @@ const TYPICAL_RESOURCES: Record<string, { energy: number; bandwidth: number }> =
 
 /** Current TRON mainnet resource prices (SUN per unit). May change via governance votes. */
 const RESOURCE_PRICES = {
-  energyPriceSun: 100,     // 420 SUN per energy unit
+  energyPriceSun: 100,     // 100 SUN per energy unit
   bandwidthPriceSun: 1000, // 1000 SUN per bandwidth point
-  freeBandwidthPerDay: 1500, // free bandwidth for activated accounts
+  freeBandwidthPerDay: 600, // free bandwidth for activated accounts
   sunPerTRX: 1_000_000,
 };
 
@@ -337,6 +462,10 @@ interface StepEstimate {
   step: string;
   description: string;
   energyEstimate: number;
+  /** Base energy (energyEstimate - energyPenalty). Only meaningful when energyPenalty > 0. */
+  energyBase: number;
+  /** Dynamic energy penalty for high-traffic contracts. Included in energyEstimate. */
+  energyPenalty: number;
   bandwidthEstimate: number;
   energySource: "simulation" | "typical";
   simulationError?: string;
@@ -359,8 +488,40 @@ export interface ResourceEstimation {
   note: string;
 }
 
+/** Bandwidth overhead constants (matching TronLink implementation) */
+const DATA_HEX_PROTOBUF_EXTRA = 3;
+const SIGNATURE_PER_BANDWIDTH = 67;
+const MAX_RESULT_SIZE_IN_TX = 64;
+
 /**
- * Helper: try on-chain simulation via triggerConstantContract, return energy or null.
+ * Encode ABI parameters to hex string for direct API calls.
+ */
+function encodeParams(
+  tronWeb: any,
+  params: Array<{ type: string; value: any }>,
+): string {
+  if (!params || params.length === 0) return "";
+  try {
+    const types = params.map(p => p.type);
+    const values = params.map(p => p.value);
+    const hex = tronWeb.utils.abi.encodeParams(types, values);
+    return typeof hex === "string" && hex.startsWith("0x") ? hex.slice(2) : hex;
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Helper: estimate energy and bandwidth for a contract call.
+ *
+ * Follows TronLink's approach:
+ * 1. Try estimateEnergy API (most accurate, includes dynamic energy penalty).
+ * 2. Call triggerconstantcontract via fullNode.request (like TronLink does) to get
+ *    energy_used (already includes energy_penalty) and bandwidth from raw_data_hex.
+ * 3. If both fail, return null to trigger typical-value fallback.
+ *
+ * IMPORTANT: energy_used from triggerconstantcontract already includes energy_penalty.
+ * energy_penalty is a breakdown field, NOT an additional cost. (Ref: TronLink TransferCost)
  */
 async function trySimulateEnergy(
   tronWeb: any,
@@ -369,55 +530,101 @@ async function trySimulateEnergy(
   functionSelector: string,
   params: Array<{ type: string; value: any }>,
   options: any = {},
-): Promise<{ energy: number | null; error?: string }> {
-  try {
-    const result = await tronWeb.transactionBuilder.triggerConstantContract(
+  _network = "mainnet",
+): Promise<{ energy: number | null; energyPenalty: number; bandwidth: number | null; error?: string }> {
+  const parameter = encodeParams(tronWeb, params);
+  const callValue = options.callValue ? parseInt(options.callValue.toString(), 10) : 0;
+
+  // Build request body for direct API call (like TronLink)
+  const requestBody: Record<string, any> = {
+    owner_address: tronWeb.address.toHex(ownerAddress),
+    contract_address: tronWeb.address.toHex(contractAddress),
+    function_selector: functionSelector,
+    parameter,
+    call_value: callValue,
+    visible: false,
+  };
+
+  // Run both estimation methods in parallel
+  const [estimateResult, simResult] = await Promise.allSettled([
+    tronWeb.transactionBuilder.estimateEnergy(
       contractAddress,
       functionSelector,
       options,
       params,
       ownerAddress,
-    );
-    if (result?.result?.result) {
-      return { energy: (result.energy_used || 0) + (result.energy_penalty || 0) };
-    }
-    const errorMsg = result?.result?.message
-      ? Buffer.from(result.result.message, "hex").toString()
+    ),
+    tronWeb.fullNode.request('wallet/triggerconstantcontract', requestBody, 'post'),
+  ]);
+
+  const estimateData = estimateResult.status === "fulfilled" ? estimateResult.value : null;
+  const simData = simResult.status === "fulfilled" ? simResult.value : null;
+
+  // estimateEnergy returns energy_required (includes dynamic penalty)
+  const estimatedEnergy = (estimateData?.energy_required > 0) ? estimateData.energy_required : null;
+
+  let energy: number | null = null;
+  let energyPenalty = 0;
+  let bandwidth: number | null = null;
+  let error: string | undefined;
+
+  if (simData?.result?.result) {
+    // energy_used already includes energy_penalty (TronLink confirmed)
+    const simEnergy = simData.energy_used || 0;
+    energyPenalty = simData.energy_penalty || 0;
+
+    // Prefer estimateEnergy result (more accurate when available), fallback to triggerconstantcontract
+    energy = estimatedEnergy ?? simEnergy;
+
+    // Bandwidth: match TronLink's calculation
+    try {
+      const rawDataHex = simData.transaction?.raw_data_hex;
+      if (rawDataHex) {
+        const rawDataBytes = Buffer.byteLength(rawDataHex, 'hex');
+        bandwidth = rawDataBytes + DATA_HEX_PROTOBUF_EXTRA + SIGNATURE_PER_BANDWIDTH + MAX_RESULT_SIZE_IN_TX;
+      }
+    } catch { /* ignore */ }
+  } else {
+    // Simulation failed — try to use estimateEnergy result alone
+    energy = estimatedEnergy;
+    const errorMsg = simData?.result?.message
+      ? Buffer.from(simData.result.message, "hex").toString()
       : "simulation reverted";
-    return { energy: null, error: errorMsg };
-  } catch (e: any) {
-    return { energy: null, error: e.message };
+    error = errorMsg;
   }
+
+  return { energy, energyPenalty, bandwidth, error };
 }
 
 /**
  * Build a step estimate from simulation result with fallback to typical values.
  *
- * triggerConstantContract is a static simulation that does NOT fully account for
- * storage write costs (SSTORE) or energy penalties on high-traffic contracts.
- * For write operations like approve/mint/borrow, it often returns significantly
- * lower energy than the actual on-chain cost (e.g. 7,350 vs 22,350 for approve).
- *
- * To avoid underestimating, we take the MAXIMUM of simulation and typical values.
+ * When simulation succeeds, we trust its energy_used value directly (it already
+ * includes energy_penalty per TronLink's implementation).
+ * Only falls back to hardcoded typical values when simulation fails.
  */
 function buildStep(
   step: string,
   description: string,
-  simResult: { energy: number | null; error?: string },
+  simResult: { energy: number | null; energyPenalty: number; bandwidth: number | null; error?: string },
   typicalKey: string,
 ): StepEstimate {
   const typical = TYPICAL_RESOURCES[typicalKey];
-  // Use max(simulation, typical) because simulation underestimates write operations
   const simEnergy = simResult.energy;
-  const energyEstimate = simEnergy !== null
-    ? Math.max(simEnergy, typical.energy)
-    : typical.energy;
+  const energyEstimate = simEnergy !== null ? simEnergy : typical.energy;
+  const energyPenalty = simResult.energyPenalty || 0;
+  const energyBase = Math.max(energyEstimate - energyPenalty, 0);
+  const bandwidthEstimate = simResult.bandwidth !== null
+    ? simResult.bandwidth
+    : typical.bandwidth;
   const energySource: StepEstimate["energySource"] = simEnergy !== null ? "simulation" : "typical";
   return {
     step,
     description,
     energyEstimate,
-    bandwidthEstimate: typical.bandwidth,
+    energyBase,
+    energyPenalty,
+    bandwidthEstimate,
     energySource,
     ...(simResult.error ? { simulationError: simResult.error } : {}),
   };
@@ -475,12 +682,15 @@ export async function checkResourceSufficiency(
   const resources = await tronWeb.trx.getAccountResources(ownerAddress);
 
   const totalEnergy = (resources.EnergyLimit || 0) - (resources.EnergyUsed || 0);
-  const totalBandwidth =
-    ((resources.freeNetLimit || 0) - (resources.freeNetUsed || 0)) +
-    ((resources.NetLimit || 0) - (resources.NetUsed || 0));
+  const freeBandwidth = (resources.freeNetLimit || 0) - (resources.freeNetUsed || 0);
+  const stakedBandwidth = (resources.NetLimit || 0) - (resources.NetUsed || 0);
 
   const energyDeficit = Math.max(0, requiredEnergy - totalEnergy);
-  const bandwidthDeficit = Math.max(0, requiredBandwidth - totalBandwidth);
+  // TRON bandwidth is all-or-nothing: free bandwidth is used only if it covers the full cost,
+  // otherwise staked bandwidth is checked, and if neither suffices, full amount is burned as TRX.
+  const bandwidthCovered = freeBandwidth >= requiredBandwidth || stakedBandwidth >= requiredBandwidth;
+  const bandwidthDeficit = bandwidthCovered ? 0 : requiredBandwidth;
+  const totalBandwidth = freeBandwidth + stakedBandwidth;
 
   const energyBurnTRX = energyDeficit * RESOURCE_PRICES.energyPriceSun / RESOURCE_PRICES.sunPerTRX;
   const bandwidthBurnTRX = bandwidthDeficit * RESOURCE_PRICES.bandwidthPriceSun / RESOURCE_PRICES.sunPerTRX;
@@ -528,8 +738,58 @@ export function getTypicalResources(operation: string, isTRX: boolean): { energy
 }
 
 /**
+ * Check current TRC20 allowance and simulate approve energy.
+ * Returns the step estimate, or null if current allowance is already sufficient.
+ *
+ * @param requiredAmount - The amount needed (raw units). If undefined, always estimate (for standalone approve).
+ */
+async function estimateApproveStep(
+  tronWeb: any,
+  ownerAddress: string,
+  tokenAddress: string,
+  spenderAddress: string,
+  tokenSymbol: string,
+  spenderLabel: string,
+  requiredAmount: bigint | undefined,
+  network: string,
+): Promise<{ step: StepEstimate; skipped: boolean } | null> {
+  const sim = (addr: string, fn: string, params: Array<{ type: string; value: any }>, opts: any = {}) =>
+    trySimulateEnergy(tronWeb, ownerAddress, addr, fn, params, opts, network);
+
+  // Check current allowance
+  let currentAllowance = 0n;
+  try {
+    const token = tronWeb.contract(TRC20_ABI, tokenAddress);
+    const raw = await token.methods.allowance(ownerAddress, spenderAddress).call();
+    currentAllowance = BigInt(raw);
+  } catch { /* default to 0 */ }
+
+  // If requiredAmount is specified and current allowance covers it, skip approve
+  if (requiredAmount !== undefined && currentAllowance >= requiredAmount && currentAllowance > 0n) {
+    return null; // no approve needed
+  }
+
+  // Simulate approve
+  const r = await sim(tokenAddress, "approve(address,uint256)", [
+    { type: "address", value: spenderAddress }, { type: "uint256", value: MAX_UINT256 },
+  ]);
+
+  // SSTORE cold write (allowance 0→non-zero) costs ~3x more than warm write (non-zero→non-zero).
+  // triggerConstantContract simulates against current state; if allowance is already set it
+  // returns the cheaper warm cost. For first-time approve we use the typical cold-write value.
+  if (r.energy !== null && currentAllowance === 0n) {
+    r.energy = Math.max(r.energy, TYPICAL_RESOURCES.approve.energy);
+  }
+
+  const step = buildStep("approve", `Approve ${tokenSymbol} for ${spenderLabel}`, r, "approve");
+  return { step, skipped: false };
+}
+
+/**
  * Estimate energy, bandwidth, and TRX cost for any JustLend operation.
  * Tries on-chain simulation first, falls back to historical typical values.
+ *
+ * @param spender - (optional) Custom spender address for approve operations. Defaults to jToken address.
  */
 export async function estimateLendingEnergy(
   operation: LendingOperation,
@@ -537,13 +797,14 @@ export async function estimateLendingEnergy(
   amount: string,
   ownerAddress: string,
   network = "mainnet",
+  spender?: string,
 ): Promise<ResourceEstimation> {
   const tronWeb = getTronWeb(network);
   const addresses = getJustLendAddresses(network);
   const steps: StepEstimate[] = [];
 
   const sim = (addr: string, fn: string, params: Array<{ type: string; value: any }>, opts: any = {}) =>
-    trySimulateEnergy(tronWeb, ownerAddress, addr, fn, params, opts);
+    trySimulateEnergy(tronWeb, ownerAddress, addr, fn, params, opts, network);
 
   let info: JTokenInfo | undefined;
   if (operation !== "claim_rewards") {
@@ -556,26 +817,32 @@ export async function estimateLendingEnergy(
 
     case "approve": {
       if (isTRX || !info!.underlying) throw new Error(`${jTokenSymbol} is native TRX — no approval needed`);
-      const r = await sim(info!.underlying, "approve(address,uint256)", [
-        { type: "address", value: info!.address }, { type: "uint256", value: MAX_UINT256 },
-      ]);
-      steps.push(buildStep("approve", `Approve ${info!.underlyingSymbol} for ${jTokenSymbol}`, r, "approve"));
+      const spenderAddr = spender || info!.address;
+      const spenderLabel = spender ? spender : jTokenSymbol;
+      const result = await estimateApproveStep(
+        tronWeb, ownerAddress, info!.underlying, spenderAddr,
+        info!.underlyingSymbol, spenderLabel, undefined, network,
+      );
+      if (result) steps.push(result.step);
       break;
     }
 
     case "supply": {
-      const amountRaw = BigInt(Math.floor(parseFloat(amount) * 10 ** info!.underlyingDecimals)).toString();
+      const amountRaw = BigInt(Math.floor(parseFloat(amount) * 10 ** info!.underlyingDecimals));
       if (!isTRX && info!.underlying) {
-        const ar = await sim(info!.underlying, "approve(address,uint256)", [
-          { type: "address", value: info!.address }, { type: "uint256", value: MAX_UINT256 },
-        ]);
-        steps.push(buildStep("approve", `Approve ${info!.underlyingSymbol} for ${jTokenSymbol}`, ar, "approve"));
+        const approveResult = await estimateApproveStep(
+          tronWeb, ownerAddress, info!.underlying, info!.address,
+          info!.underlyingSymbol, jTokenSymbol, amountRaw, network,
+        );
+        if (approveResult) {
+          steps.push(approveResult.step);
+        }
       }
       if (isTRX) {
-        const mr = await sim(info!.address, "mint()", [], { callValue: amountRaw });
+        const mr = await sim(info!.address, "mint()", [], { callValue: amountRaw.toString() });
         steps.push(buildStep("mint", `Supply ${amount} TRX to ${jTokenSymbol}`, mr, "supply_trx"));
       } else {
-        const mr = await sim(info!.address, "mint(uint256)", [{ type: "uint256", value: amountRaw }]);
+        const mr = await sim(info!.address, "mint(uint256)", [{ type: "uint256", value: amountRaw.toString() }]);
         steps.push(buildStep("mint", `Supply ${amount} ${info!.underlyingSymbol} to ${jTokenSymbol}`, mr, "supply_trc20"));
       }
       break;
@@ -603,18 +870,21 @@ export async function estimateLendingEnergy(
     }
 
     case "repay": {
-      const amountRaw = BigInt(Math.floor(parseFloat(amount) * 10 ** info!.underlyingDecimals)).toString();
+      const amountRaw = BigInt(Math.floor(parseFloat(amount) * 10 ** info!.underlyingDecimals));
       if (!isTRX && info!.underlying) {
-        const ar = await sim(info!.underlying, "approve(address,uint256)", [
-          { type: "address", value: info!.address }, { type: "uint256", value: MAX_UINT256 },
-        ]);
-        steps.push(buildStep("approve", `Approve ${info!.underlyingSymbol} for ${jTokenSymbol}`, ar, "approve"));
+        const approveResult = await estimateApproveStep(
+          tronWeb, ownerAddress, info!.underlying, info!.address,
+          info!.underlyingSymbol, jTokenSymbol, amountRaw, network,
+        );
+        if (approveResult) {
+          steps.push(approveResult.step);
+        }
       }
       if (isTRX) {
-        const r = await sim(info!.address, "repayBorrow()", [], { callValue: amountRaw });
+        const r = await sim(info!.address, "repayBorrow()", [], { callValue: amountRaw.toString() });
         steps.push(buildStep("repayBorrow", `Repay ${amount} TRX to ${jTokenSymbol}`, r, "repay_trx"));
       } else {
-        const r = await sim(info!.address, "repayBorrow(uint256)", [{ type: "uint256", value: amountRaw }]);
+        const r = await sim(info!.address, "repayBorrow(uint256)", [{ type: "uint256", value: amountRaw.toString() }]);
         steps.push(buildStep("repayBorrow", `Repay ${amount} ${info!.underlyingSymbol} to ${jTokenSymbol}`, r, "repay_trc20"));
       }
       break;
@@ -660,4 +930,96 @@ export async function estimateLendingEnergy(
       ? "Some steps could not be simulated on-chain (e.g. insufficient balance or missing approval). Typical values from historical data are used. Actual costs may vary."
       : "All steps were successfully simulated on-chain. Actual costs should be close to these estimates.",
   };
+}
+
+/**
+ * Simulate on-chain resource consumption for a lending operation.
+ * Uses trySimulateEnergy for real estimation, falls back to TYPICAL_RESOURCES on failure.
+ *
+ * This is a lightweight version of estimateLendingEnergy — it only returns
+ * { energy, bandwidth } for use in pre-transaction resource warnings.
+ */
+export async function simulateOperationResources(
+  operation: string,
+  jTokenSymbol: string,
+  amount: string,
+  ownerAddress: string,
+  network = "mainnet",
+): Promise<{ energy: number; bandwidth: number; source: "simulation" | "typical" }> {
+  const typical = getTypicalResources(operation, operation === "supply" || operation === "repay"
+    ? (() => {
+        try { const i = resolveJToken(jTokenSymbol, network); return i.underlyingSymbol === "TRX" || !i.underlying; } catch { return false; }
+      })()
+    : false,
+  );
+
+  try {
+    const tronWeb = getTronWeb(network);
+    const addresses = getJustLendAddresses(network);
+    let info: JTokenInfo | undefined;
+    if (operation !== "claim_rewards") {
+      info = resolveJToken(jTokenSymbol, network);
+    }
+    const isTRX = info ? (info.underlyingSymbol === "TRX" || !info.underlying) : false;
+
+    const sim = (addr: string, fn: string, params: Array<{ type: string; value: any }>, opts: any = {}) =>
+      trySimulateEnergy(tronWeb, ownerAddress, addr, fn, params, opts, network);
+
+    let result: { energy: number | null; energyPenalty: number; bandwidth: number | null; error?: string };
+
+    switch (operation) {
+      case "supply": {
+        const amountRaw = BigInt(Math.floor(parseFloat(amount) * 10 ** info!.underlyingDecimals));
+        if (isTRX) {
+          result = await sim(info!.address, "mint()", [], { callValue: amountRaw.toString() });
+        } else {
+          result = await sim(info!.address, "mint(uint256)", [{ type: "uint256", value: amountRaw.toString() }]);
+        }
+        break;
+      }
+      case "withdraw": {
+        const amountRaw = BigInt(Math.floor(parseFloat(amount) * 10 ** info!.underlyingDecimals)).toString();
+        result = await sim(info!.address, "redeemUnderlying(uint256)", [{ type: "uint256", value: amountRaw }]);
+        break;
+      }
+      case "withdraw_all": {
+        result = await sim(info!.address, "redeem(uint256)", [{ type: "uint256", value: "100000000" }]);
+        break;
+      }
+      case "borrow": {
+        const amountRaw = BigInt(Math.floor(parseFloat(amount) * 10 ** info!.underlyingDecimals)).toString();
+        result = await sim(info!.address, "borrow(uint256)", [{ type: "uint256", value: amountRaw }]);
+        break;
+      }
+      case "repay": {
+        const amountRaw = BigInt(Math.floor(parseFloat(amount) * 10 ** info!.underlyingDecimals));
+        if (isTRX) {
+          result = await sim(info!.address, "repayBorrow()", [], { callValue: amountRaw.toString() });
+        } else {
+          result = await sim(info!.address, "repayBorrow(uint256)", [{ type: "uint256", value: amountRaw.toString() }]);
+        }
+        break;
+      }
+      case "enter_market": {
+        result = await sim(addresses.comptroller, "enterMarkets(address[])", [{ type: "address[]", value: [info!.address] }]);
+        break;
+      }
+      case "exit_market": {
+        result = await sim(addresses.comptroller, "exitMarket(address)", [{ type: "address", value: info!.address }]);
+        break;
+      }
+      case "claim_rewards": {
+        result = await sim(addresses.comptroller, "claimReward(address)", [{ type: "address", value: ownerAddress }]);
+        break;
+      }
+      default:
+        return { ...typical, source: "typical" };
+    }
+
+    const energy = result!.energy ?? typical.energy;
+    const bandwidth = result!.bandwidth ?? typical.bandwidth;
+    return { energy, bandwidth, source: result!.energy !== null ? "simulation" : "typical" };
+  } catch {
+    return { ...typical, source: "typical" };
+  }
 }

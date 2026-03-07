@@ -149,8 +149,24 @@ export function registerJustLendTools(server: McpServer) {
             }, null, 2),
           }],
         };
-      } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+      } catch {
+        // API unavailable (e.g. Nile testnet), fallback to on-chain contract queries
+        try {
+          const markets = await services.getAllMarketData(network);
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                totalMarkets: markets.length,
+                markets,
+                note: "Data queried directly from on-chain contracts (API unavailable). Mining rewards and underlying staking APY are not included.",
+                source: "contract",
+              }, null, 2),
+            }],
+          };
+        } catch (error: any) {
+          return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        }
       }
     },
   );

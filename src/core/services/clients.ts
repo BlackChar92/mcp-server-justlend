@@ -16,7 +16,8 @@ export function getTronWeb(network = "mainnet"): TronWeb {
   if (clientCache.has(key)) return clientCache.get(key)!;
 
   const config = getNetworkConfig(network);
-  const apiKey = process.env.TRONGRID_API_KEY;
+  const isMainnet = ["mainnet", "tron", "trx"].includes(key);
+  const apiKey = isMainnet ? process.env.TRONGRID_API_KEY : undefined;
 
   const client = new TronWeb({
     fullHost: config.fullNode,
@@ -40,7 +41,9 @@ export function getTronWeb(network = "mainnet"): TronWeb {
  */
 export function getWallet(privateKey: string, network = "mainnet"): TronWeb {
   const config = getNetworkConfig(network);
-  const apiKey = process.env.TRONGRID_API_KEY;
+  const n = network.toLowerCase();
+  const isMainnet = ["mainnet", "tron", "trx"].includes(n);
+  const apiKey = isMainnet ? process.env.TRONGRID_API_KEY : undefined;
   const cleanKey = privateKey.startsWith("0x") ? privateKey.slice(2) : privateKey;
 
   return new TronWeb({

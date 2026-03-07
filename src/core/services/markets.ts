@@ -168,12 +168,17 @@ export async function getMarketData(jTokenInfo: JTokenInfo, network = "mainnet")
  */
 export async function getAllMarketData(network = "mainnet"): Promise<MarketData[]> {
   const tokens = getAllJTokens(network);
-  const results = await Promise.allSettled(
-    tokens.map((t) => getMarketData(t, network)),
-  );
-  return results
-    .filter((r): r is PromiseFulfilledResult<MarketData> => r.status === "fulfilled")
-    .map((r) => r.value);
+  // Query sequentially to avoid RPC rate-limiting (especially on testnet nodes)
+  const allResults: MarketData[] = [];
+  for (const token of tokens) {
+    try {
+      const data = await getMarketData(token, network);
+      allResults.push(data);
+    } catch {
+      // Skip markets that fail to query
+    }
+  }
+  return allResults;
 }
 
 /**

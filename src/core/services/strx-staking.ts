@@ -17,6 +17,20 @@ import { STRX_ABI } from "../abis.js";
 const TRX_PRECISION = 1e6;
 const TOKEN_PRECISION = 1e18;
 const DEFAULT_FEE_LIMIT = 200_000_000; // 200 TRX
+const FETCH_TIMEOUT_MS = 15_000;
+
+const TRON_ADDRESS_RE = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
+
+function validateTronAddress(address: string, label = "address"): string {
+  if (!TRON_ADDRESS_RE.test(address)) {
+    throw new Error(`Invalid TRON ${label} format`);
+  }
+  return address;
+}
+
+function fetchWithTimeout(url: string): Promise<Response> {
+  return fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+}
 
 // ============================================================================
 // Market Data
@@ -27,7 +41,7 @@ const DEFAULT_FEE_LIMIT = 200_000_000; // 200 TRX
  */
 export async function getStrxDashboard(network = "mainnet") {
   const apiHost = getApiHost(network);
-  const resp = await fetch(`${apiHost}/strx/dashboard`);
+  const resp = await fetchWithTimeout(`${apiHost}/strx/dashboard`);
   const json = await resp.json();
   if (json.code !== 0) throw new Error(`sTRX Dashboard API error: ${json.message || "unknown"}`);
 
@@ -56,8 +70,9 @@ export async function getStrxDashboard(network = "mainnet") {
  * Get user's sTRX staking account info from the API.
  */
 export async function getStrxStakeAccount(address: string, network = "mainnet") {
+  validateTronAddress(address);
   const apiHost = getApiHost(network);
-  const resp = await fetch(`${apiHost}/strx/stake/account?addr=${address}`);
+  const resp = await fetchWithTimeout(`${apiHost}/strx/stake/account?addr=${address}`);
   const json = await resp.json();
 
   if (json.code !== 0) {
@@ -79,6 +94,7 @@ export async function getStrxStakeAccount(address: string, network = "mainnet") 
  * Get the on-chain sTRX token balance for an address.
  */
 export async function getStrxBalance(address: string, network = "mainnet") {
+  validateTronAddress(address);
   const tronWeb = getTronWeb(network);
   const addrs = getJustLendAddresses(network);
   const contract = tronWeb.contract(STRX_ABI, addrs.strx.proxy);
@@ -117,8 +133,7 @@ export async function stakeTrxToStrx(
 
   if (balanceTrx < totalNeeded) {
     throw new Error(
-      `Insufficient TRX balance. Have: ${balanceTrx.toFixed(2)} TRX, ` +
-      `Need: ~${totalNeeded.toFixed(2)} TRX (stake: ${amountTrx} + gas)`,
+      `Insufficient TRX balance for staking. Need ~${totalNeeded.toFixed(2)} TRX (stake + gas)`,
     );
   }
 
@@ -172,7 +187,7 @@ export async function unstakeStrx(
 
   if (balanceNum < amountStrx) {
     throw new Error(
-      `Insufficient sTRX balance. Have: ${balanceNum.toFixed(6)} sTRX, Need: ${amountStrx} sTRX`,
+      `Insufficient sTRX balance for unstaking. Need ${amountStrx} sTRX`,
     );
   }
 
@@ -249,6 +264,7 @@ export async function checkWithdrawalEligibility(
   address: string,
   network = "mainnet",
 ) {
+  validateTronAddress(address);
   const account = await getStrxStakeAccount(address, network);
   const dashboard = await getStrxDashboard(network);
 
@@ -273,7 +289,7 @@ export async function checkWithdrawalEligibility(
     pendingUnstakeRounds: pendingRounds.length,
     completedUnstakeRounds: completedRounds.length,
     hasCompletedWithdrawals: completedRounds.length > 0,
-    unfreezeDelayDays: dashboard.unfreezeDelayDays,
+    unfreezeDelayDays: Number(dashboard.unfreezeDelayDays),
     roundDetails,
   };
 }

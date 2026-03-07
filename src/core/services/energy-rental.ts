@@ -11,11 +11,25 @@
 
 import { getTronWeb, getWallet } from "./clients.js";
 import { getJustLendAddresses, getApiHost } from "../chains.js";
-import { ENERGY_MARKET_ABI, ENERGY_RATE_MODEL_ABI } from "../abis.js";
+import { ENERGY_MARKET_ABI } from "../abis.js";
 
 const TRX_PRECISION = 1e6;
 const TOKEN_PRECISION = 1e18;
 const DEFAULT_FEE_LIMIT = 200_000_000; // 200 TRX
+const FETCH_TIMEOUT_MS = 15_000;
+
+const TRON_ADDRESS_RE = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
+
+function validateTronAddress(address: string, label = "address"): string {
+  if (!TRON_ADDRESS_RE.test(address)) {
+    throw new Error(`Invalid TRON ${label} format`);
+  }
+  return address;
+}
+
+function fetchWithTimeout(url: string): Promise<Response> {
+  return fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+}
 
 // ============================================================================
 // Contract Read Helpers
@@ -27,12 +41,6 @@ async function getMarketContract(network: string) {
   return tronWeb.contract(ENERGY_MARKET_ABI, addrs.strx.market);
 }
 
-async function getRateModelContract(network: string) {
-  const tronWeb = getTronWeb(network);
-  const addrs = getJustLendAddresses(network);
-  return tronWeb.contract(ENERGY_RATE_MODEL_ABI, addrs.energyRateModel);
-}
-
 // ============================================================================
 // Market Data Queries
 // ============================================================================
@@ -42,7 +50,7 @@ async function getRateModelContract(network: string) {
  */
 export async function getEnergyRentalDashboard(network = "mainnet") {
   const apiHost = getApiHost(network);
-  const resp = await fetch(`${apiHost}/strx/dashboard`);
+  const resp = await fetchWithTimeout(`${apiHost}/strx/dashboard`);
   const json = await resp.json();
   if (json.code !== 0) throw new Error(`Dashboard API error: ${json.message || "unknown"}`);
 
@@ -154,8 +162,8 @@ export async function calculateRentalPrice(
     throw new Error("Energy rental is currently paused");
   }
 
-  const energyStakePerTrx = dashboard.energyStakePerTrx;
-  if (!energyStakePerTrx || energyStakePerTrx <= 0) {
+  const energyStakePerTrx = Number(dashboard.energyStakePerTrx);
+  if (!energyStakePerTrx || energyStakePerTrx <= 0 || Number.isNaN(energyStakePerTrx)) {
     throw new Error("Invalid energyStakePerTrx from dashboard");
   }
 
@@ -208,6 +216,7 @@ export async function getUserRentalOrders(
   pageSize = 10,
   network = "mainnet",
 ) {
+  validateTronAddress(address, "address");
   const apiHost = getApiHost(network);
   const params = new URLSearchParams({
     rentType: "1",
@@ -219,7 +228,7 @@ export async function getUserRentalOrders(
   if (type === "renter" || type === "all") params.set("renter", address);
   if (type === "receiver" || type === "all") params.set("receiver", address);
 
-  const resp = await fetch(`${apiHost}/strx/rent/allOrderList?${params}`);
+  const resp = await fetchWithTimeout(`${apiHost}/strx/rent/allOrderList?${params}`);
   const json = await resp.json();
   if (json.code !== 0) throw new Error(`Order list API error: ${json.code}`);
 
@@ -234,6 +243,8 @@ export async function getRentInfo(
   receiverAddress: string,
   network = "mainnet",
 ) {
+  validateTronAddress(renterAddress, "renter address");
+  validateTronAddress(receiverAddress, "receiver address");
   const contract = await getMarketContract(network);
 
   const [rentInfoResult, rentalsResult] = await Promise.all([
@@ -259,9 +270,11 @@ export async function getReturnRentalInfo(
   receiver: string,
   network = "mainnet",
 ) {
+  validateTronAddress(renter, "renter address");
+  validateTronAddress(receiver, "receiver address");
   const apiHost = getApiHost(network);
   const params = new URLSearchParams({ renter, receiver, rentType: "1" });
-  const resp = await fetch(`${apiHost}/strx/rent/quit?${params}`);
+  const resp = await fetchWithTimeout(`${apiHost}/strx/rent/quit?${params}`);
   const json = await resp.json();
 
   return {
@@ -292,6 +305,8 @@ export async function rentEnergy(
   durationSeconds: number,
   network = "mainnet",
 ) {
+  validateTronAddress(receiverAddress, "receiver address");
+
   // Calculate price first (includes pause check and max rentable check)
   const priceEstimate = await calculateRentalPrice(energyAmount, durationSeconds, network);
 
@@ -304,8 +319,7 @@ export async function rentEnergy(
   const totalNeeded = priceEstimate.totalPrepayment + DEFAULT_FEE_LIMIT / TRX_PRECISION;
   if (balanceTrx < totalNeeded) {
     throw new Error(
-      `Insufficient TRX balance. Have: ${balanceTrx.toFixed(2)} TRX, ` +
-      `Need: ~${totalNeeded.toFixed(2)} TRX (prepayment: ${priceEstimate.totalPrepayment.toFixed(2)} + gas)`,
+      `Insufficient TRX balance for energy rental. Need ~${totalNeeded.toFixed(2)} TRX (prepayment + gas)`,
     );
   }
 
@@ -341,6 +355,10 @@ export async function returnEnergyRental(
   endOrderType: "renter" | "receiver" = "renter",
   network = "mainnet",
 ) {
+  validateTronAddress(counterpartyAddress, "counterparty address");
+  if (endOrderType !== "renter" && endOrderType !== "receiver") {
+    throw new Error("endOrderType must be 'renter' or 'receiver'");
+  }
   const tronWeb = getWallet(privateKey, network);
   const walletAddress = tronWeb.defaultAddress.base58 as string;
   const addrs = getJustLendAddresses(network);

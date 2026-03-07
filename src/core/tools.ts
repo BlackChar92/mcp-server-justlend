@@ -1324,7 +1324,10 @@ export function registerJustLendTools(server: McpServer) {
       try {
         const addr = address || services.getWalletAddress();
         const balance = await services.getStrxBalance(addr, network);
-        return { content: [{ type: "text", text: JSON.stringify(balance, null, 2) }] };
+        return { content: [{ type: "text", text: JSON.stringify({
+          ...balance,
+          raw: balance.raw.toString(),
+        }, null, 2) }] };
       } catch (error: any) {
         return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }

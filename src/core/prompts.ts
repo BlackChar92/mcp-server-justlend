@@ -322,4 +322,165 @@ Present as a structured portfolio report with clear sections, numbers, and actio
 **Objective**: Stake ${amount} TRX on ${network} to receive sTRX and earn staking rewards.
 
 ## Pre-flight Checks
-1. **Wallet**: Call the \`get
+1. **Wallet**: Call the \`get_wallet_address\` tool to confirm the active wallet.
+2. **Dashboard**: Call the \`get_strx_dashboard\` tool to check:
+   - Current sTRX/TRX exchange rate
+   - Total APY (vote APY + rental income)
+   - How much sTRX you'll receive for ${amount} TRX
+3. **Balance Check**: Call the \`get_trx_balance\` tool to verify sufficient TRX for staking + gas.
+4. **Current Position**: Call the \`get_strx_account\` tool to see existing staking position.
+
+## Execute Staking
+5. Call the \`stake_trx_to_strx\` tool with amount=${amount}.
+
+## Post-Staking Verification
+6. Call the \`get_strx_balance\` tool to confirm sTRX received.
+7. Call the \`get_strx_account\` tool to see updated staking position.
+
+## Report
+- Amount of TRX staked
+- sTRX received (or estimated)
+- Current APY and estimated annual earnings
+- Note about unstaking: requires unbonding period
+
+**Safety**: If balance is insufficient, STOP and report.`,
+        },
+      }],
+    }),
+  );
+
+  // ============================================================================
+  // MARKET COMPARISON
+  // ============================================================================
+  server.registerPrompt(
+    "compare_markets",
+    {
+      description: "Compare JustLend markets to find the best opportunities for supply or borrow",
+      argsSchema: {
+        action: z.enum(["supply", "borrow"]).describe("Whether looking to supply or borrow"),
+        network: z.string().optional().describe("Network (default: mainnet)"),
+      },
+    },
+    ({ action, network = "mainnet" }) => ({
+      messages: [{
+        role: "user",
+        content: {
+          type: "text",
+          text: `# JustLend Market Comparison — Best ${action === "supply" ? "Supply" : "Borrow"} Opportunities
+
+**Objective**: Compare all JustLend markets to find the best ${action} opportunities on ${network}.
+
+## Data Collection
+1. Call the \`get_all_markets\` tool to get all market data.
+
+## Analysis
+${action === "supply" ? `
+### Best Supply Opportunities (sorted by APY)
+- Rank markets by supplyAPY (highest first)
+- For each market show: symbol, APY, TVL, utilization, collateral factor
+- Flag any paused markets
+- Note: higher utilization often means more volatile APY
+
+### Considerations
+- Collateral factor: higher = more borrowing power if used as collateral
+- Utilization rate: very high (>90%) may cause withdrawal delays
+- TVL: larger markets are generally more stable
+` : `
+### Best Borrow Opportunities (sorted by APY)
+- Rank markets by borrowAPY (lowest first — cheapest to borrow)
+- For each market show: symbol, APY, available liquidity, collateral factor
+- Flag any paused markets
+
+### Considerations
+- Available liquidity: ensure enough exists for your borrow size
+- Borrow APY: lower is better (less interest cost)
+- Utilization: if near kink, rates may jump suddenly
+`}
+
+## Recommendation
+Provide a top-3 recommendation with reasoning.`,
+        },
+      }],
+    }),
+  );
+
+  // ============================================================================
+  // GOVERNANCE & VOTING WORKFLOW
+  // ============================================================================
+  server.registerPrompt(
+    "query_proposals",
+    {
+      description: "Guide to checking active governance proposals and user voting status",
+      argsSchema: {
+        network: z.string().optional().describe("Network (default: mainnet)"),
+      },
+    },
+    ({ network = "mainnet" }) => ({
+      messages: [{
+        role: "user",
+        content: {
+          type: "text",
+          text: `# Check JustLend Governance Proposals
+
+**Objective**: Check the latest DAO proposals and see if the user has available votes.
+
+## Pre-flight Checks
+1. Call the \`get_proposal_list\` tool to fetch recent proposals. Filter for those with state "Active" (state: 1).
+2. Note: Some older proposals may lack detailed titles (marked as "Details maintained in frontend"). If the user asks about them, gently explain that the detailed text is maintained locally in the web client and cannot be fully retrieved by the API, but they can still be voted on by referencing the Proposal ID.
+3. Call the \`get_wallet_address\` tool to get the active wallet.
+4. Call the \`get_vote_info\` tool to check the user's available voting power (surplusVotes).
+
+## Report
+Provide a summary:
+- List of Active proposals (ID, Title, Current For/Against votes)
+- User's available voting power (WJST)
+- Ask if the user wants to cast a vote or needs to deposit JST for more voting power.`,
+        },
+      }],
+    }),
+  );
+
+  server.registerPrompt(
+    "cast_vote",
+    {
+      description: "Step-by-step guide to safely cast a vote on a JustLend governance proposal",
+      argsSchema: {
+        proposalId: z.string().describe("The ID of the proposal to vote on"),
+        support: z.enum(["for", "against"]).describe("Whether to vote 'for' or 'against'"),
+        amount: z.string().describe("Amount of votes (WJST) to cast"),
+        network: z.string().optional().describe("Network (default: mainnet)"),
+      },
+    },
+    ({ proposalId, support, amount, network = "mainnet" }) => ({
+      messages: [{
+        role: "user",
+        content: {
+          type: "text",
+          text: `# Cast Vote on JustLend Proposal
+
+**Objective**: Cast ${amount} votes ${support.toUpperCase()} proposal #${proposalId} on ${network}.
+
+## Pre-flight Checks
+1. **Wallet**: Call the \`get_wallet_address\` tool to confirm the active wallet.
+2. **Voting Power Check**: Call the \`get_vote_info\` tool to verify the user has enough \`surplusVotes\` (>= ${amount}).
+   - If \`surplusVotes\` is insufficient, inform the user they need to deposit JST first using the \`deposit_jst_for_votes\` tool.
+3. **Proposal Status**: Call the \`get_proposal_list\` tool to verify that proposal #${proposalId} is currently "Active".
+
+## Execute Vote
+4. If checks pass, call the \`cast_vote\` tool with:
+   - proposalId=${proposalId}
+   - support=${support === "for" ? "true" : "false"}
+   - votes=${amount}
+
+## Post-Vote Verification
+5. Call the \`get_vote_info\` tool to confirm the votes were consumed from \`surplusVotes\` and added to \`castVote\`.
+
+## Report
+- Proposal ID and decision (For/Against)
+- Amount of votes cast
+- Remaining available voting power`,
+        },
+      }],
+    }),
+  );
+}

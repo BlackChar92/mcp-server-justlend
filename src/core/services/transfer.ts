@@ -1,6 +1,8 @@
 import { getWallet } from "./clients.js";
 import { utils } from "./utils.js";
 import { checkResourceSufficiency } from "./lending.js";
+import { safeSend } from "./contracts.js";
+import { TRC20_ABI } from "../abis.js";
 
 /**
  * Transfer TRX to an address.
@@ -69,7 +71,12 @@ export async function transferTRC20(
       );
     }
 
-    const txId = await contract.methods.transfer(to, amount).send();
+    const { txID: txId } = await safeSend(privateKey, {
+      address: tokenAddress,
+      abi: TRC20_ABI,
+      functionName: "transfer",
+      args: [to, amount]
+    }, network);
 
     const symbol = await contract.methods.symbol().call();
     const decimals = await contract.methods.decimals().call();
@@ -102,8 +109,12 @@ export async function approveTRC20(
   const tronWeb = getWallet(privateKey, network);
 
   try {
-    const contract = await tronWeb.contract().at(tokenAddress);
-    const txId = await contract.methods.approve(spenderAddress, amount).send();
+    const { txID: txId } = await safeSend(privateKey, {
+      address: tokenAddress,
+      abi: TRC20_ABI,
+      functionName: "approve",
+      args: [spenderAddress, amount]
+    }, network);
     return txId;
   } catch (error: any) {
     throw new Error(`Failed to approve TRC20: ${error.message}`);

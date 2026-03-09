@@ -14,6 +14,7 @@
  */
 
 import { getTronWeb, getWallet } from "./clients.js";
+import { safeSend } from "./contracts.js";
 import { getJustLendAddresses, getJTokenInfo, getAllJTokens, type JTokenInfo } from "../chains.js";
 import { JTOKEN_ABI, JTRX_MINT_ABI, COMPTROLLER_ABI, TRC20_ABI, PRICE_ORACLE_ABI } from "../abis.js";
 import { utils } from "./utils.js";
@@ -124,8 +125,12 @@ export async function supply(
     }
 
     // jTRX: mint() is payable, amount via callValue (in Sun)
-    const contract = tronWeb.contract(JTRX_MINT_ABI, info.address);
-    const txID = await contract.methods.mint().send({ callValue: amountRaw.toString() });
+    const { txID } = await safeSend(privateKey, {
+      address: info.address,
+      abi: JTRX_MINT_ABI,
+      functionName: "mint",
+      callValue: amountRaw.toString(),
+    }, network);
     return { txID, jTokenSymbol, amount, message: `Supplied ${amount} TRX to ${jTokenSymbol}` };
   } else {
     // Check TRC20 token balance
@@ -147,8 +152,12 @@ export async function supply(
     }
 
     // TRC20: mint(amount)
-    const contract = tronWeb.contract(JTOKEN_ABI, info.address);
-    const txID = await contract.methods.mint(amountRaw.toString()).send();
+    const { txID } = await safeSend(privateKey, {
+      address: info.address,
+      abi: JTOKEN_ABI,
+      functionName: "mint",
+      args: [amountRaw.toString()],
+    }, network);
     return { txID, jTokenSymbol, amount, message: `Supplied ${amount} ${info.underlyingSymbol} to ${jTokenSymbol}` };
   }
 }
@@ -191,7 +200,12 @@ export async function withdraw(
     );
   }
 
-  const txID = await contract.methods.redeemUnderlying(amountRaw.toString()).send();
+  const { txID } = await safeSend(privateKey, {
+    address: info.address,
+    abi: JTOKEN_ABI,
+    functionName: "redeemUnderlying",
+    args: [amountRaw.toString()],
+  }, network);
   return { txID, jTokenSymbol, amount, message: `Withdrew ${amount} ${info.underlyingSymbol} from ${jTokenSymbol}` };
 }
 
@@ -216,7 +230,12 @@ export async function withdrawAll(
     throw new Error(`No ${jTokenSymbol} balance to withdraw`);
   }
 
-  const txID = await contract.methods.redeem(jTokenBalance.toString()).send();
+  const { txID } = await safeSend(privateKey, {
+    address: info.address,
+    abi: JTOKEN_ABI,
+    functionName: "redeem",
+    args: [jTokenBalance.toString()],
+  }, network);
   return { txID, jTokenSymbol, message: `Withdrew all supply from ${jTokenSymbol}` };
 }
 
@@ -360,8 +379,12 @@ export async function borrow(
     );
   }
 
-  const contract = tronWeb.contract(JTOKEN_ABI, info.address);
-  const txID = await contract.methods.borrow(amountRaw.toString()).send();
+  const { txID } = await safeSend(privateKey, {
+    address: info.address,
+    abi: JTOKEN_ABI,
+    functionName: "borrow",
+    args: [amountRaw.toString()],
+  }, network);
   return { txID, jTokenSymbol, amount, message: `Borrowed ${amount} ${info.underlyingSymbol} from ${jTokenSymbol}` };
 }
 
@@ -429,25 +452,24 @@ export async function repay(
       ? borrowBal + borrowBal / 1000n
       : utils.parseUnits(amount, info.underlyingDecimals);
 
-    // jTRX repayBorrow(uint256) is payable — callValue carries TRX, uint256 param
-    // is the repay amount. Use triggerSmartContract with explicit function signature
-    // "repayBorrow(uint256)" to ensure the correct selector (0x0e752702) is used.
-    // tronWeb.contract() can mis-encode the selector when ABI has payable variants.
     const repayParam = isMax ? MAX_UINT256 : repayAmount.toString();
-    const tx = await tronWeb.transactionBuilder.triggerSmartContract(
-      info.address,
-      "repayBorrow(uint256)",
-      { callValue: Number(repayAmount), feeLimit: 150_000_000 },
-      [{ type: "uint256", value: repayParam }],
-      tronWeb.defaultAddress.base58 as string,
-    );
-    const signed = await tronWeb.trx.sign(tx.transaction);
-    const broadcast = await tronWeb.trx.sendRawTransaction(signed);
-    const txID = broadcast.txid || broadcast.transaction?.txID || tx.transaction.txID;
+    const { txID } = await safeSend(privateKey, {
+      address: info.address,
+      abi: JTOKEN_ABI,
+      functionName: "repayBorrow",
+      args: [repayParam],
+      callValue: repayAmount.toString(),
+      feeLimit: 150_000_000,
+    }, network);
     return { txID, jTokenSymbol, amount: isMax ? "max" : amount, message: `Repaid ${isMax ? "all" : amount} TRX to ${jTokenSymbol}` };
   } else {
     const repayAmount = isMax ? MAX_UINT256 : utils.parseUnits(amount, info.underlyingDecimals).toString();
-    const txID = await contract.methods.repayBorrow(repayAmount).send();
+    const { txID } = await safeSend(privateKey, {
+      address: info.address,
+      abi: JTOKEN_ABI,
+      functionName: "repayBorrow",
+      args: [repayAmount],
+    }, network);
     return { txID, jTokenSymbol, amount: isMax ? "max" : amount, message: `Repaid ${isMax ? "all" : amount} ${info.underlyingSymbol} to ${jTokenSymbol}` };
   }
 }
@@ -479,7 +501,12 @@ export async function enterMarket(
     return { message: `${jTokenSymbol} is already enabled as collateral, no need to enable again.` };
   }
 
-  const txID = await comptroller.methods.enterMarkets([info.address]).send();
+  const { txID } = await safeSend(privateKey, {
+    address: addresses.comptroller,
+    abi: COMPTROLLER_ABI,
+    functionName: "enterMarkets",
+    args: [[info.address]],
+  }, network);
   return { txID, message: `Enabled ${jTokenSymbol} as collateral` };
 }
 
@@ -582,7 +609,12 @@ export async function exitMarket(
   }
 
   // All checks passed, execute exitMarket
-  const txID = await comptroller.methods.exitMarket(info.address).send();
+  const { txID } = await safeSend(privateKey, {
+    address: addresses.comptroller,
+    abi: COMPTROLLER_ABI,
+    functionName: "exitMarket",
+    args: [info.address],
+  }, network);
 
   // Parse transaction events to verify on-chain success
   const events = await parseTxEvents(txID, network);
@@ -628,7 +660,12 @@ export async function approveUnderlying(
     };
   }
 
-  const txID = await token.methods.approve(info.address, approveAmount).send();
+  const { txID } = await safeSend(privateKey, {
+    address: info.underlying!,
+    abi: TRC20_ABI,
+    functionName: "approve",
+    args: [info.address, approveAmount],
+  }, network);
   return { txID, message: `Approved ${amount === "max" ? "unlimited" : amount} ${info.underlyingSymbol} for ${jTokenSymbol}` };
 }
 
@@ -647,8 +684,12 @@ export async function claimRewards(
   const addresses = getJustLendAddresses(network);
   const walletAddress = tronWeb.defaultAddress.base58;
 
-  const comptroller = tronWeb.contract(COMPTROLLER_ABI, addresses.comptroller);
-  const txID = await comptroller.methods.claimReward(walletAddress).send();
+  const { txID } = await safeSend(privateKey, {
+    address: addresses.comptroller,
+    abi: COMPTROLLER_ABI,
+    functionName: "claimReward",
+    args: [walletAddress],
+  }, network);
   return { txID, message: `Claimed JustLend rewards for ${walletAddress}` };
 }
 
@@ -662,17 +703,17 @@ export async function claimRewards(
  * Used as fallback when triggerConstantContract simulation reverts.
  */
 const TYPICAL_RESOURCES: Record<string, { energy: number; bandwidth: number }> = {
-  approve:        { energy: 23000,  bandwidth: 265 },
-  supply_trx:     { energy: 80000,  bandwidth: 280 },
-  supply_trc20:   { energy: 100000, bandwidth: 310 },
-  withdraw:       { energy: 90000,  bandwidth: 300 },
-  withdraw_all:   { energy: 90000,  bandwidth: 300 },
-  borrow:         { energy: 100000, bandwidth: 313 },
-  repay_trx:      { energy: 80000,  bandwidth: 280 },
-  repay_trc20:    { energy: 90000,  bandwidth: 320 },
-  enter_market:   { energy: 80000,  bandwidth: 300 },
-  exit_market:    { energy: 50000,  bandwidth: 280 },
-  claim_rewards:  { energy: 60000,  bandwidth: 330 },
+  approve: { energy: 23000, bandwidth: 265 },
+  supply_trx: { energy: 80000, bandwidth: 280 },
+  supply_trc20: { energy: 100000, bandwidth: 310 },
+  withdraw: { energy: 90000, bandwidth: 300 },
+  withdraw_all: { energy: 90000, bandwidth: 300 },
+  borrow: { energy: 100000, bandwidth: 313 },
+  repay_trx: { energy: 80000, bandwidth: 280 },
+  repay_trc20: { energy: 90000, bandwidth: 320 },
+  enter_market: { energy: 80000, bandwidth: 300 },
+  exit_market: { energy: 50000, bandwidth: 280 },
+  claim_rewards: { energy: 60000, bandwidth: 330 },
 };
 
 /** Current TRON mainnet resource prices (SUN per unit). May change via governance votes. */
@@ -1175,8 +1216,8 @@ export async function simulateOperationResources(
 ): Promise<{ energy: number; bandwidth: number; source: "simulation" | "typical" }> {
   const typical = getTypicalResources(operation, operation === "supply" || operation === "repay"
     ? (() => {
-        try { const i = resolveJToken(jTokenSymbol, network); return i.underlyingSymbol === "TRX" || !i.underlying; } catch { return false; }
-      })()
+      try { const i = resolveJToken(jTokenSymbol, network); return i.underlyingSymbol === "TRX" || !i.underlying; } catch { return false; }
+    })()
     : false,
   );
 

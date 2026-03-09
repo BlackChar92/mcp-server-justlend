@@ -14,6 +14,7 @@ import { getTronWeb, getWallet } from "./clients.js";
 import { getJustLendAddresses, getApiHost } from "../chains.js";
 import { STRX_ABI } from "../abis.js";
 import { checkResourceSufficiency } from "./lending.js";
+import { safeSend } from "./contracts.js";
 
 const TRX_PRECISION = 1e6;
 const TOKEN_PRECISION = 1e18;
@@ -146,10 +147,13 @@ export async function stakeTrxToStrx(
   const amountSun = BigInt(Math.floor(amountTrx * TRX_PRECISION));
   const contract = tronWeb.contract(STRX_ABI, addrs.strx.proxy);
 
-  const txId = await contract.methods.deposit().send({
+  const { txID: txId } = await safeSend(privateKey, {
+    address: addrs.strx.proxy,
+    abi: STRX_ABI,
+    functionName: "deposit",
     callValue: amountSun.toString(),
     feeLimit: DEFAULT_FEE_LIMIT,
-  });
+  }, network);
 
   // Estimate sTRX received based on exchange rate
   let estimatedStrx: string | undefined;
@@ -200,9 +204,13 @@ export async function unstakeStrx(
   const amountWei = BigInt(Math.floor(amountStrx * TOKEN_PRECISION));
   const contract = tronWeb.contract(STRX_ABI, addrs.strx.proxy);
 
-  const txId = await contract.methods.withdraw(amountWei.toString()).send({
+  const { txID: txId } = await safeSend(privateKey, {
+    address: addrs.strx.proxy,
+    abi: STRX_ABI,
+    functionName: "withdraw",
+    args: [amountWei.toString()],
     feeLimit: DEFAULT_FEE_LIMIT,
-  });
+  }, network);
 
   // Estimate TRX to receive
   let estimatedTrx: string | undefined;
@@ -251,9 +259,12 @@ export async function claimStrxRewards(
   }
 
   const contract = tronWeb.contract(STRX_ABI, addrs.strx.proxy);
-  const txId = await contract.methods.claimAll().send({
+  const { txID: txId } = await safeSend(privateKey, {
+    address: addrs.strx.proxy,
+    abi: STRX_ABI,
+    functionName: "claimAll",
     feeLimit: DEFAULT_FEE_LIMIT,
-  });
+  }, network);
 
   return {
     txId,

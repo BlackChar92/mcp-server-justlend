@@ -65,6 +65,129 @@ export async function writeContract(
   }
 }
 
+export interface SafeSendParams {
+  address: string;
+  abi: any[];
+  functionName: string;
+  args?: any[];
+  callValue?: string | number;
+  feeLimit?: number;
+}
+
+/**
+ * Safe transaction interaction with pre-flight simulation and resource checks.
+ * Prevents failed transactions from burning gas.
+ */
+export async function safeSend(
+  privateKey: string,
+  params: SafeSendParams,
+  network = "mainnet"
+) {
+  const tronWeb = getWallet(privateKey, network);
+  const ownerAddress = tronWeb.defaultAddress.base58;
+  if (!ownerAddress) throw new Error("Wallet not configured");
+
+  // 1. Simulate and get energy requirement
+  // Note: we use estimateEnergy which triggers simulate contract under the hood
+  let energyUsed = 0;
+  let energyPenalty = 0;
+  try {
+    const simResult = await estimateEnergy({
+      address: params.address,
+      abi: params.abi,
+      functionName: params.functionName,
+      args: params.args,
+      callValue: params.callValue,
+    }, network);
+    energyUsed = simResult.energyUsed;
+    energyPenalty = simResult.energyPenalty;
+  } catch (err: any) {
+    // Check if the simulation threw an error meaning the TX would revert
+    throw new Error(`Transaction pre-flight simulation failed. The transaction would revert: ${err.message}`);
+  }
+
+  // 2. Minimal resource balance check
+  const resources = await tronWeb.trx.getAccountResources(ownerAddress);
+  const account = await tronWeb.trx.getAccount(ownerAddress);
+  const balanceSun = BigInt(account.balance || 0);
+
+  const totalEnergyAvailable = (resources.EnergyLimit || 0) - (resources.EnergyUsed || 0);
+  const totalEnergyTarget = energyUsed + energyPenalty;
+  const energyDeficit = Math.max(0, totalEnergyTarget - totalEnergyAvailable);
+  // Estimate energy price (approx 420 sun max per energy unit on TRON right now)
+  const trxForEnergy = BigInt(energyDeficit) * 420n;
+
+  // Bandwidth estimation: assume pessimistic 350 for contract call tx size
+  const requiredBandwidth = 350;
+  const totalBandwidthAvailable = ((resources.freeNetLimit || 0) - (resources.freeNetUsed || 0)) +
+    ((resources.NetLimit || 0) - (resources.NetUsed || 0));
+  const bandwidthDeficit = totalBandwidthAvailable >= requiredBandwidth ? 0 : requiredBandwidth;
+  const trxForBandwidth = BigInt(bandwidthDeficit) * 1000n; // 1000 sun per bandwidth
+
+  const callValueSun = BigInt(params.callValue || 0);
+
+  // Add 10% safety margin for estimated fees
+  const feeMargin = (trxForEnergy + trxForBandwidth) * 110n / 100n;
+  const requiredBalanceWithMargin = feeMargin + callValueSun;
+
+  if (balanceSun < requiredBalanceWithMargin) {
+    const requiredTrx = Number(requiredBalanceWithMargin) / 1e6;
+    const currentTrx = Number(balanceSun) / 1e6;
+    throw new Error(
+      `Pre-flight check failed: Insufficient TRX balance. ` +
+      `Estimated requirement to cover fees+value: ~${requiredTrx.toFixed(2)} TRX, but you only have ${currentTrx.toFixed(2)} TRX.`
+    );
+  }
+
+  // 3. Pre-flight checks passed, build and send the transaction
+  try {
+    const normalizedAbi = parseABI(params.abi);
+    const candidates = normalizedAbi.filter(
+      (item) => item.type === "function" && item.name === params.functionName,
+    );
+    if (candidates.length === 0) throw new Error(`Function ${params.functionName} not found in ABI`);
+
+    const args = params.args || [];
+    const matched = candidates.filter((item) => (item.inputs || []).length === args.length);
+    if (matched.length === 0) throw new Error(`No overload of ${params.functionName} accepts ${args.length} argument(s)`);
+    if (matched.length > 1) throw new Error(`Ambiguous overload for ${params.functionName} with ${args.length} argument(s)`);
+
+    const func = matched[0];
+    const inputTypes = (func.inputs || []).map((i: any) => expandType(i));
+    const signature = `${params.functionName}(${inputTypes.join(",")})`;
+    const typedParams = args.map((val: any, index: number) => ({
+      type: inputTypes[index],
+      value: val,
+    }));
+
+    const options: any = {
+      feeLimit: params.feeLimit || 1_000_000_000,
+    };
+    if (params.callValue) options.callValue = Number(params.callValue);
+
+    const tx = await tronWeb.transactionBuilder.triggerSmartContract(
+      params.address,
+      signature,
+      options,
+      typedParams,
+      ownerAddress
+    );
+
+    const signed = await tronWeb.trx.sign(tx.transaction, privateKey);
+    const broadcast = await tronWeb.trx.sendRawTransaction(signed);
+
+    if (broadcast.result) {
+      const txID = broadcast.txid || broadcast.transaction?.txID || tx.transaction.txID;
+      return { txID, message: "Transaction broadcasted successfully" };
+    } else {
+      const errorMsg = broadcast.message ? Buffer.from(broadcast.message, "hex").toString() : JSON.stringify(broadcast);
+      throw new Error(`Broadcast failed: ${errorMsg}`);
+    }
+  } catch (error: any) {
+    throw new Error(`Transaction failed during broadcast: ${error.message}`);
+  }
+}
+
 /**
  * Fetch the ABI for a verified contract from TronGrid.
  */
@@ -210,9 +333,9 @@ export async function multicall(
 
     const finalResults =
       Array.isArray(results) &&
-      results.length === 1 &&
-      Array.isArray(results[0]) &&
-      (Array.isArray(results[0][0]) || typeof results[0][0] === "object")
+        results.length === 1 &&
+        Array.isArray(results[0]) &&
+        (Array.isArray(results[0][0]) || typeof results[0][0] === "object")
         ? results[0]
         : results;
 
@@ -349,6 +472,7 @@ export async function estimateEnergy(
     functionName: string;
     args?: any[];
     abi: any[];
+    callValue?: string | number;
     ownerAddress?: string;
   },
   network = "mainnet",
@@ -406,7 +530,7 @@ export async function estimateEnergy(
     const result = await tronWeb.transactionBuilder.triggerConstantContract(
       params.address,
       signature,
-      {},
+      params.callValue ? { callValue: Number(params.callValue) } : {},
       typedParams,
       ownerAddress,
     );

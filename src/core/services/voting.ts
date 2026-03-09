@@ -15,6 +15,7 @@
  */
 
 import { getTronWeb, getWallet } from "./clients.js";
+import { safeSend } from "./contracts.js";
 import { getJustLendAddresses, getApiHost } from "../chains.js";
 import { GOVERNOR_ALPHA_ABI, WJST_ABI, POLY_ABI, TRC20_ABI } from "../abis.js";
 import { utils } from "./utils.js";
@@ -257,8 +258,12 @@ export async function approveJSTForVoting(
     ? MAX_UINT256
     : utils.parseUnits(amount, JST_DECIMALS).toString();
 
-  const token = tronWeb.contract(TRC20_ABI, addresses.jst);
-  const txID = await token.methods.approve(addresses.wjst, approveAmount).send();
+  const { txID } = await safeSend(privateKey, {
+    address: addresses.jst,
+    abi: TRC20_ABI,
+    functionName: "approve",
+    args: [addresses.wjst, approveAmount]
+  }, network);
   return { txID, message: `Approved ${amount === "max" ? "unlimited" : amount} JST for WJST voting contract` };
 }
 
@@ -299,8 +304,12 @@ export async function depositJSTForVotes(
     );
   }
 
-  const contract = tronWeb.contract(WJST_ABI, addresses.wjst);
-  const txID = await contract.methods.deposit(amountRaw.toString()).send();
+  const { txID } = await safeSend(privateKey, {
+    address: addresses.wjst,
+    abi: WJST_ABI,
+    functionName: "deposit",
+    args: [amountRaw.toString()]
+  }, network);
 
   return { txID, amount, message: `Deposited ${amount} JST to get voting power (WJST)` };
 }
@@ -333,8 +342,12 @@ export async function withdrawVotesToJST(
     );
   }
 
-  const contract = tronWeb.contract(WJST_ABI, addresses.wjst);
-  const txID = await contract.methods.withdraw(amountRaw.toString()).send();
+  const { txID } = await safeSend(privateKey, {
+    address: addresses.wjst,
+    abi: WJST_ABI,
+    functionName: "withdraw",
+    args: [amountRaw.toString()]
+  }, network);
 
   return { txID, amount, message: `Withdrew ${amount} WJST back to JST` };
 }
@@ -373,8 +386,12 @@ export async function castVote(
 
   const supportValue = support ? 1 : 0;
 
-  const contract = tronWeb.contract(GOVERNOR_ALPHA_ABI, addresses.governorAlpha);
-  const txID = await contract.methods.castVote(proposalId, votesRaw.toString(), supportValue).send();
+  const { txID } = await safeSend(privateKey, {
+    address: addresses.governorAlpha,
+    abi: GOVERNOR_ALPHA_ABI,
+    functionName: "castVote",
+    args: [proposalId, votesRaw.toString(), supportValue]
+  }, network);
 
   return {
     txID,
@@ -410,8 +427,12 @@ export async function withdrawVotesFromProposal(
     throw new Error(`No locked votes found for proposal #${proposalId}. Nothing to withdraw.`);
   }
 
-  const contract = tronWeb.contract(GOVERNOR_ALPHA_ABI, addresses.governorAlpha);
-  const txID = await contract.methods.withdrawVotes(proposalId).send();
+  const { txID } = await safeSend(privateKey, {
+    address: addresses.governorAlpha,
+    abi: GOVERNOR_ALPHA_ABI,
+    functionName: "withdrawVotes",
+    args: [proposalId]
+  }, network);
 
   return { txID, proposalId, message: `Withdrew votes from proposal #${proposalId}` };
 }

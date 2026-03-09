@@ -899,12 +899,14 @@ export function registerJustLendTools(server: McpServer) {
     "get_usdd_mining_config",
     {
       description: "Get USDD mining configuration including mining periods, reward tokens (USDD/TRX dual mining), and schedule.",
-      inputSchema: {},
+      inputSchema: {
+        network: z.string().optional().describe("Network. Default: mainnet"),
+      },
       annotations: { title: "Get USDD Mining Config", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
-    async () => {
+    async ({ network = "mainnet" }) => {
       try {
-        const config = services.getUSDDMiningConfig();
+        const config = await services.getUSDDMiningConfig(network);
         return { content: [{ type: "text", text: JSON.stringify(config, null, 2) }] };
       } catch (error: any) {
         return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };

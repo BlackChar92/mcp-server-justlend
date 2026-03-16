@@ -68,7 +68,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Get Supported Markets", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
-    async ({ network = "mainnet" }) => {
+    async ({ network = services.getGlobalNetwork() }) => {
       try {
         const tokens = getAllJTokens(network);
         const addresses = getJustLendAddresses(network);
@@ -112,7 +112,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Get Market Data", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ market, network = "mainnet" }) => {
+    async ({ market, network = services.getGlobalNetwork() }) => {
       try {
         const info = getJTokenInfo(market, network);
         if (!info) throw new Error(`Unknown market: ${market}. Use get_supported_markets to see available markets.`);
@@ -137,7 +137,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Get All Markets", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ network = "mainnet" }) => {
+    async ({ network = services.getGlobalNetwork() }) => {
       try {
         const markets = await services.getAllMarketOverview(network);
         return {
@@ -181,7 +181,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Get Protocol Summary", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ network = "mainnet" }) => {
+    async ({ network = services.getGlobalNetwork() }) => {
       try {
         const summary = await services.getProtocolSummary(network);
         return { content: [{ type: "text", text: JSON.stringify(summary, null, 2) }] };
@@ -204,7 +204,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Get Markets from API", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ network = "mainnet" }) => {
+    async ({ network = services.getGlobalNetwork() }) => {
       try {
         const data = await services.getMarketDataFromAPI(network);
         return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
@@ -223,7 +223,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Get Dashboard from API", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ network = "mainnet" }) => {
+    async ({ network = services.getGlobalNetwork() }) => {
       try {
         const data = await services.getMarketDashboardFromAPI(network);
         return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
@@ -243,7 +243,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Get jToken Details from API", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ jtokenAddr, network = "mainnet" }) => {
+    async ({ jtokenAddr, network = services.getGlobalNetwork() }) => {
       try {
         const data = await services.getJTokenDetailsFromAPI(jtokenAddr, network);
         return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
@@ -270,7 +270,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Get Account Summary", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ address, network = "mainnet" }) => {
+    async ({ address, network = services.getGlobalNetwork() }) => {
       try {
         const userAddress = address || services.getWalletAddress();
         const summary = await services.getAccountSummary(userAddress, network);
@@ -297,7 +297,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Check Allowance", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ market, amount, address, network = "mainnet" }) => {
+    async ({ market, amount, address, network = services.getGlobalNetwork() }) => {
       try {
         const userAddress = address || services.getWalletAddress();
         const result = await services.checkAllowance(userAddress, market, network);
@@ -336,7 +336,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Get TRX Balance", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ address, network = "mainnet" }) => {
+    async ({ address, network = services.getGlobalNetwork() }) => {
       try {
         const userAddress = address || services.getWalletAddress();
         const balance = await services.getTRXBalance(userAddress, network);
@@ -364,7 +364,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Get Token Balance", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ token, tokenAddress, address, network = "mainnet" }) => {
+    async ({ token, tokenAddress, address, network = services.getGlobalNetwork() }) => {
       try {
         const tokenInput = token || tokenAddress;
         if (!tokenInput) {
@@ -413,7 +413,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Get Account Data from API", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ address, network = "mainnet" }) => {
+    async ({ address, network = services.getGlobalNetwork() }) => {
       try {
         const userAddress = address || services.getWalletAddress();
         const data = await services.getAccountDataFromAPI(userAddress, network);
@@ -469,7 +469,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Supply Assets", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     },
-    async ({ market, amount, network = "mainnet" }) => {
+    async ({ market, amount, network = services.getGlobalNetwork() }) => {
       try {
         const privateKey = services.getConfiguredPrivateKey();
         const info = getJTokenInfo(market, network);
@@ -530,7 +530,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Withdraw Assets", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     },
-    async ({ market, amount, network = "mainnet" }) => {
+    async ({ market, amount, network = services.getGlobalNetwork() }) => {
       try {
         const privateKey = services.getConfiguredPrivateKey();
         const walletAddr = services.getWalletAddress();
@@ -562,7 +562,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Withdraw All", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     },
-    async ({ market, network = "mainnet" }) => {
+    async ({ market, network = services.getGlobalNetwork() }) => {
       try {
         const privateKey = services.getConfiguredPrivateKey();
         const walletAddr = services.getWalletAddress();
@@ -597,7 +597,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Borrow Assets", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     },
-    async ({ market, amount, network = "mainnet" }) => {
+    async ({ market, amount, network = services.getGlobalNetwork() }) => {
       try {
         const privateKey = services.getConfiguredPrivateKey();
         const walletAddr = services.getWalletAddress();
@@ -632,7 +632,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Repay Borrow", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     },
-    async ({ market, amount, network = "mainnet" }) => {
+    async ({ market, amount, network = services.getGlobalNetwork() }) => {
       try {
         const privateKey = services.getConfiguredPrivateKey();
         const info = getJTokenInfo(market, network);
@@ -692,7 +692,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Enter Market (Enable Collateral)", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ market, network = "mainnet" }) => {
+    async ({ market, network = services.getGlobalNetwork() }) => {
       try {
         const privateKey = services.getConfiguredPrivateKey();
         const walletAddr = services.getWalletAddress();
@@ -725,7 +725,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Exit Market (Disable Collateral)", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     },
-    async ({ market, network = "mainnet" }) => {
+    async ({ market, network = services.getGlobalNetwork() }) => {
       try {
         const privateKey = services.getConfiguredPrivateKey();
         const walletAddr = services.getWalletAddress();
@@ -775,7 +775,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Approve Underlying Token", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ market, amount = "max", network = "mainnet" }) => {
+    async ({ market, amount = "max", network = services.getGlobalNetwork() }) => {
       try {
         const privateKey = services.getConfiguredPrivateKey();
         const walletAddr = services.getWalletAddress();
@@ -806,7 +806,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Claim Rewards", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ network = "mainnet" }) => {
+    async ({ network = services.getGlobalNetwork() }) => {
       try {
         const privateKey = services.getConfiguredPrivateKey();
         const walletAddr = services.getWalletAddress();
@@ -852,7 +852,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Estimate Operation Resources", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ operation, market, amount = "1", spender, address, network = "mainnet" }) => {
+    async ({ operation, market, amount = "1", spender, address, network = services.getGlobalNetwork() }) => {
       try {
         const userAddress = address || services.getWalletAddress();
         const result = await services.estimateLendingEnergy(operation, market, amount, userAddress, network, spender);
@@ -886,7 +886,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Get Mining Rewards", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ address, network = "mainnet" }) => {
+    async ({ address, network = services.getGlobalNetwork() }) => {
       try {
         const userAddress = address || services.getWalletAddress();
         const rewards = await services.getMiningRewardsFromAPI(userAddress, network);
@@ -906,7 +906,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Get USDD Mining Config", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
-    async ({ network = "mainnet" }) => {
+    async ({ network = services.getGlobalNetwork() }) => {
       try {
         const config = await services.getUSDDMiningConfig(network);
         return { content: [{ type: "text", text: JSON.stringify(config, null, 2) }] };
@@ -947,7 +947,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Get Proposal List", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ network = "mainnet", limit = 10 }) => {
+    async ({ network = services.getGlobalNetwork(), limit = 10 }) => {
       try {
         const data = await services.getProposalList(network);
         const proposals = limit > 0 ? data.proposals.slice(0, limit) : data.proposals;
@@ -968,7 +968,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Get User Vote Status", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ address, network = "mainnet" }) => {
+    async ({ address, network = services.getGlobalNetwork() }) => {
       try {
         const userAddress = address || services.getWalletAddress();
         const data = await services.getUserVoteStatus(userAddress, network);
@@ -991,7 +991,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Get Vote Info", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ address, network = "mainnet" }) => {
+    async ({ address, network = services.getGlobalNetwork() }) => {
       try {
         const userAddress = address || services.getWalletAddress();
         const data = await services.getVoteInfo(userAddress, network);
@@ -1026,7 +1026,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Get Locked Votes", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ proposalId, address, network = "mainnet" }) => {
+    async ({ proposalId, address, network = services.getGlobalNetwork() }) => {
       try {
         const userAddress = address || services.getWalletAddress();
         const data = await services.getLockedVotes(userAddress, proposalId, network);
@@ -1047,7 +1047,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Check JST Voting Allowance", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ address, network = "mainnet" }) => {
+    async ({ address, network = services.getGlobalNetwork() }) => {
       try {
         const userAddress = address || services.getWalletAddress();
         const data = await services.checkJSTAllowanceForVoting(userAddress, network);
@@ -1070,7 +1070,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Approve JST for Voting", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ amount = "max", network = "mainnet" }) => {
+    async ({ amount = "max", network = services.getGlobalNetwork() }) => {
       try {
         const privateKey = services.getConfiguredPrivateKey();
         const result = await services.approveJSTForVoting(privateKey, amount, network);
@@ -1094,7 +1094,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Deposit JST for Votes", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     },
-    async ({ amount, network = "mainnet" }) => {
+    async ({ amount, network = services.getGlobalNetwork() }) => {
       try {
         const privateKey = services.getConfiguredPrivateKey();
         const result = await services.depositJSTForVotes(privateKey, amount, network);
@@ -1117,7 +1117,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Withdraw Votes to JST", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     },
-    async ({ amount, network = "mainnet" }) => {
+    async ({ amount, network = services.getGlobalNetwork() }) => {
       try {
         const privateKey = services.getConfiguredPrivateKey();
         const result = await services.withdrawVotesToJST(privateKey, amount, network);
@@ -1143,7 +1143,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Cast Vote", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     },
-    async ({ proposalId, support, votes, network = "mainnet" }) => {
+    async ({ proposalId, support, votes, network = services.getGlobalNetwork() }) => {
       try {
         const privateKey = services.getConfiguredPrivateKey();
         const result = await services.castVote(privateKey, proposalId, support, votes, network);
@@ -1167,7 +1167,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Withdraw Votes from Proposal", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     },
-    async ({ proposalId, network = "mainnet" }) => {
+    async ({ proposalId, network = services.getGlobalNetwork() }) => {
       try {
         const privateKey = services.getConfiguredPrivateKey();
         const result = await services.withdrawVotesFromProposal(privateKey, proposalId, network);
@@ -1193,7 +1193,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Energy Rental Dashboard", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ network = "mainnet" }) => {
+    async ({ network = services.getGlobalNetwork() }) => {
       try {
         const dashboard = await services.getEnergyRentalDashboard(network);
         return { content: [{ type: "text", text: JSON.stringify(dashboard, null, 2) }] };
@@ -1214,7 +1214,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Energy Rental Parameters", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ network = "mainnet" }) => {
+    async ({ network = services.getGlobalNetwork() }) => {
       try {
         const params = await services.getEnergyRentalParams(network);
         return { content: [{ type: "text", text: JSON.stringify(params, null, 2) }] };
@@ -1242,7 +1242,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Calculate Energy Rental Price", readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ energyAmount, durationHours, receiverAddress, network = "mainnet" }) => {
+    async ({ energyAmount, durationHours, receiverAddress, network = services.getGlobalNetwork() }) => {
       try {
         // Check if this is a renewal by looking for existing rental
         if (receiverAddress) {
@@ -1319,7 +1319,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Energy Rental Rate", readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ trxAmount, network = "mainnet" }) => {
+    async ({ trxAmount, network = services.getGlobalNetwork() }) => {
       try {
         const rate = await services.getRentalRate(trxAmount, network);
         return { content: [{ type: "text", text: JSON.stringify(rate, null, 2) }] };
@@ -1344,7 +1344,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "User Energy Rental Orders", readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ address, type = "all", page = 0, pageSize = 10, network = "mainnet" }) => {
+    async ({ address, type = "all", page = 0, pageSize = 10, network = services.getGlobalNetwork() }) => {
       try {
         const addr = address || services.getWalletAddress();
         const orders = await services.getUserRentalOrders(addr, type, page, pageSize, network);
@@ -1368,7 +1368,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Energy Rent Info", readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ renterAddress, receiverAddress, network = "mainnet" }) => {
+    async ({ renterAddress, receiverAddress, network = services.getGlobalNetwork() }) => {
       try {
         const renter = renterAddress || services.getWalletAddress();
         const info = await services.getRentInfo(renter, receiverAddress, network);
@@ -1393,7 +1393,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Return Rental Info", readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ renterAddress, receiverAddress, network = "mainnet" }) => {
+    async ({ renterAddress, receiverAddress, network = services.getGlobalNetwork() }) => {
       try {
         const renter = renterAddress || services.getWalletAddress();
         const info = await services.getReturnRentalInfo(renter, receiverAddress, network);
@@ -1426,7 +1426,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Rent Energy", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     },
-    async ({ receiverAddress, energyAmount, durationHours, network = "mainnet" }) => {
+    async ({ receiverAddress, energyAmount, durationHours, network = services.getGlobalNetwork() }) => {
       try {
         const privateKey = services.getConfiguredPrivateKey();
         const durationSeconds = durationHours ? durationHours * 3600 : undefined;
@@ -1452,7 +1452,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Return Energy Rental", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     },
-    async ({ counterpartyAddress, endOrderType = "renter", network = "mainnet" }) => {
+    async ({ counterpartyAddress, endOrderType = "renter", network = services.getGlobalNetwork() }) => {
       try {
         const privateKey = services.getConfiguredPrivateKey();
         const result = await services.returnEnergyRental(privateKey, counterpartyAddress, endOrderType, network);
@@ -1478,7 +1478,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "sTRX Dashboard", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ network = "mainnet" }) => {
+    async ({ network = services.getGlobalNetwork() }) => {
       try {
         const dashboard = await services.getStrxDashboard(network);
         return { content: [{ type: "text", text: JSON.stringify(dashboard, null, 2) }] };
@@ -1500,7 +1500,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "sTRX Account Info", readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ address, network = "mainnet" }) => {
+    async ({ address, network = services.getGlobalNetwork() }) => {
       try {
         const addr = address || services.getWalletAddress();
         const account = await services.getStrxStakeAccount(addr, network);
@@ -1521,7 +1521,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "sTRX Balance", readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ address, network = "mainnet" }) => {
+    async ({ address, network = services.getGlobalNetwork() }) => {
       try {
         const addr = address || services.getWalletAddress();
         const balance = await services.getStrxBalance(addr, network);
@@ -1551,7 +1551,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Check sTRX Withdrawal Eligibility", readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ address, network = "mainnet" }) => {
+    async ({ address, network = services.getGlobalNetwork() }) => {
       try {
         const addr = address || services.getWalletAddress();
         const eligibility = await services.checkWithdrawalEligibility(addr, network);
@@ -1579,7 +1579,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Stake TRX to sTRX", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     },
-    async ({ amount, network = "mainnet" }) => {
+    async ({ amount, network = services.getGlobalNetwork() }) => {
       try {
         const privateKey = services.getConfiguredPrivateKey();
         const result = await services.stakeTrxToStrx(privateKey, amount, network);
@@ -1603,7 +1603,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Unstake sTRX", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     },
-    async ({ amount, network = "mainnet" }) => {
+    async ({ amount, network = services.getGlobalNetwork() }) => {
       try {
         const privateKey = services.getConfiguredPrivateKey();
         const result = await services.unstakeStrx(privateKey, amount, network);
@@ -1625,7 +1625,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Claim sTRX Rewards", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     },
-    async ({ network = "mainnet" }) => {
+    async ({ network = services.getGlobalNetwork() }) => {
       try {
         const privateKey = services.getConfiguredPrivateKey();
         const result = await services.claimStrxRewards(privateKey, network);
@@ -1633,6 +1633,41 @@ export function registerJustLendTools(server: McpServer) {
       } catch (error: any) {
         return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
+    },
+  );
+
+  // ============================================================================
+  // GLOBAL CONFIGURATION
+  // ============================================================================
+
+  server.registerTool(
+    "set_network",
+    {
+      description: "Set the global default network used by all JustLend operations unless explicitly overridden.",
+      inputSchema: {
+        network: z.string().describe("Network name (mainnet, nile)."),
+      },
+      annotations: { title: "Set Global Network", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async ({ network }) => {
+      try {
+        services.setGlobalNetwork(network);
+        return { content: [{ type: "text", text: `Successfully switched global default network to: ${network}` }] };
+      } catch (error: any) {
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+      }
+    },
+  );
+
+  server.registerTool(
+    "get_network",
+    {
+      description: "Get the current global default network used by all JustLend operations.",
+      inputSchema: {},
+      annotations: { title: "Get Global Network", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async () => {
+      return { content: [{ type: "text", text: `Current global default network: ${services.getGlobalNetwork()}` }] };
     },
   );
 }

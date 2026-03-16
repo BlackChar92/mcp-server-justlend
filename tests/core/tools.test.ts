@@ -14,6 +14,10 @@ vi.mock("../../src/core/services/index.js", () => ({
     address: "TTestWalletAddress123456789012345",
   })),
 
+  // Global Config
+  getGlobalNetwork: vi.fn(() => "mainnet"),
+  setGlobalNetwork: vi.fn(),
+
   // Market Data
   getMarketData: vi.fn(async () => ({
     symbol: "jUSDT",

@@ -448,12 +448,103 @@ export async function calculateRenewalPrice(
 // ============================================================================
 
 /**
- * Get user's rental orders from the API.
- * Returns empty arrays safely if API fails.
+ * Fallback: scan RentResource events from the market contract to discover
+ * rental orders for a given address, then verify each on-chain.
+ * This is used when the backend API is unavailable (e.g., Nile testnet).
  */
+async function getOrdersFromContractEvents(
+  address: string,
+  network: string,
+): Promise<{ orders: any[]; receiverOrders: any[] }> {
+  const tronWeb = getTronWeb(network);
+  const addrs = getJustLendAddresses(network);
+  const marketAddress = addrs.strx.market;
+
+  try {
+    // Query events from the market contract using TronWeb event API
+    // Look for RentResource events where the address is involved
+    // Note: TronWeb type defs don't fully match runtime API, cast to any
+    const events: any[] = await (tronWeb as any).getEventResult(marketAddress, {
+      eventName: "RentResource",
+      size: 200,
+      onlyConfirmed: true,
+    });
+
+    if (!events || !Array.isArray(events) || events.length === 0) {
+      return { orders: [], receiverOrders: [] };
+    }
+
+    // Collect unique renter-receiver pairs involving our address
+    const renterPairs: Array<{ renter: string; receiver: string }> = [];
+    const receiverPairs: Array<{ renter: string; receiver: string }> = [];
+    const seenPairs = new Set<string>();
+
+    for (const event of events) {
+      const result = event.result || {};
+      // Event params may use different naming conventions
+      const renter = result.renter || result._renter || result["0"];
+      const receiver = result.receiver || result._receiver || result["1"];
+
+      if (!renter || !receiver) continue;
+
+      // Convert hex addresses to base58 if needed
+      const renterB58 = renter.startsWith("T") ? renter : tronWeb.address.fromHex(renter);
+      const receiverB58 = receiver.startsWith("T") ? receiver : tronWeb.address.fromHex(receiver);
+
+      const pairKey = `${renterB58}-${receiverB58}`;
+      if (seenPairs.has(pairKey)) continue;
+      seenPairs.add(pairKey);
+
+      if (renterB58 === address) {
+        renterPairs.push({ renter: renterB58, receiver: receiverB58 });
+      }
+      if (receiverB58 === address) {
+        receiverPairs.push({ renter: renterB58, receiver: receiverB58 });
+      }
+    }
+
+    // Verify each pair on-chain to find active rentals
+    const verifyPair = async (pair: { renter: string; receiver: string }) => {
+      try {
+        const info = await getRentInfo(pair.renter, pair.receiver, network);
+        if (info.hasActiveRental) {
+          return {
+            renter: pair.renter,
+            receiver: pair.receiver,
+            rentBalance: info.rentBalance,
+            securityDeposit: info.securityDeposit,
+            hasActiveRental: true,
+            source: "on-chain-event-scan",
+          };
+        }
+      } catch {
+        // skip failed verifications
+      }
+      return null;
+    };
+
+    const [renterResults, receiverResults] = await Promise.all([
+      Promise.all(renterPairs.map(verifyPair)),
+      Promise.all(receiverPairs.map(verifyPair)),
+    ]);
+
+    const activeRenterOrders = renterResults.filter(Boolean);
+    const activeReceiverOrders = receiverResults.filter(Boolean);
+
+    return { orders: activeRenterOrders, receiverOrders: activeReceiverOrders };
+  } catch (error) {
+    console.warn(
+      `[Fallback] getOrdersFromContractEvents failed: ${error instanceof Error ? error.message : error}`,
+    );
+    return { orders: [], receiverOrders: [] };
+  }
+}
+
 /**
- * Get user's rental orders from the API.
- * Returns empty arrays safely in Nile or if API fails, triggering on-chain fallback in rentEnergy.
+ * Get user's rental orders.
+ * Strategy:
+ * 1. Try the backend API (works on mainnet, may work on Nile)
+ * 2. If API fails or returns empty, fall back to on-chain event scanning
  */
 export async function getUserRentalOrders(
   address: string,
@@ -463,11 +554,6 @@ export async function getUserRentalOrders(
   network = "mainnet",
 ) {
   validateTronAddress(address, "address");
-
-  // Nile 环境直接熔断，返回空列表，让调用方走链上反推逻辑
-  if (network === "nile") {
-    return { total: 0, receiverTotal: 0, orders: [], receiverOrders: [] };
-  }
 
   const apiHost = getApiHost(network);
   const params = new URLSearchParams({
@@ -479,6 +565,7 @@ export async function getUserRentalOrders(
     receiver: address,
   });
 
+  let apiSuccess = false;
   try {
     const resp = await fetchWithTimeout(`${apiHost}/strx/rent/allOrderList?${params}`);
     const json = await resp.json();
@@ -487,27 +574,64 @@ export async function getUserRentalOrders(
     const data = json.data;
     const renterOrders: any[] = data.orders || [];
     const receiverOrders: any[] = data.receiverOrders || [];
-    const selfRentalOrders = renterOrders.filter((o: any) => o.renter === o.receiver);
 
+    // API returned data — check if it's non-empty
+    if (renterOrders.length > 0 || receiverOrders.length > 0) {
+      apiSuccess = true;
+      const selfRentalOrders = renterOrders.filter((o: any) => o.renter === o.receiver);
+
+      if (type === "renter") {
+        return { total: data.total || 0, receiverTotal: 0, orders: renterOrders, receiverOrders: [] };
+      }
+      if (type === "receiver") {
+        const merged = [...receiverOrders, ...selfRentalOrders];
+        return { total: 0, receiverTotal: merged.length, orders: [], receiverOrders: merged };
+      }
+
+      const mergedReceiverOrders = [...receiverOrders, ...selfRentalOrders];
+      return {
+        total: data.total || 0,
+        receiverTotal: mergedReceiverOrders.length,
+        orders: renterOrders,
+        receiverOrders: mergedReceiverOrders,
+      };
+    }
+    // API returned empty — may be legitimate or API limitation, fall through to event scan
+    apiSuccess = true; // API worked, just returned empty
+  } catch (error) {
+    console.warn(
+      `[Fallback] getUserRentalOrders API failed: ${error instanceof Error ? error.message : error}`,
+    );
+  }
+
+  // Fallback: scan contract events to discover active orders
+  console.warn(`[Fallback] Trying contract event scan for rental orders (network=${network})...`);
+  const eventOrders = await getOrdersFromContractEvents(address, network);
+
+  if (eventOrders.orders.length > 0 || eventOrders.receiverOrders.length > 0) {
     if (type === "renter") {
-      return { total: data.total || 0, receiverTotal: 0, orders: renterOrders, receiverOrders: [] };
+      return { total: eventOrders.orders.length, receiverTotal: 0, orders: eventOrders.orders, receiverOrders: [], source: "on-chain-event-scan" };
     }
     if (type === "receiver") {
-      const merged = [...receiverOrders, ...selfRentalOrders];
-      return { total: 0, receiverTotal: merged.length, orders: [], receiverOrders: merged };
+      return { total: 0, receiverTotal: eventOrders.receiverOrders.length, orders: [], receiverOrders: eventOrders.receiverOrders, source: "on-chain-event-scan" };
     }
-
-    const mergedReceiverOrders = [...receiverOrders, ...selfRentalOrders];
     return {
-      total: data.total || 0,
-      receiverTotal: mergedReceiverOrders.length,
-      orders: renterOrders,
-      receiverOrders: mergedReceiverOrders,
+      total: eventOrders.orders.length,
+      receiverTotal: eventOrders.receiverOrders.length,
+      orders: eventOrders.orders,
+      receiverOrders: eventOrders.receiverOrders,
+      source: "on-chain-event-scan",
     };
-  } catch (error) {
-    console.warn(`[Fallback] getUserRentalOrders failed, returning empty lists.`);
-    return { total: 0, receiverTotal: 0, orders: [], receiverOrders: [] };
   }
+
+  // Both API and event scan returned empty
+  return {
+    total: 0,
+    receiverTotal: 0,
+    orders: [],
+    receiverOrders: [],
+    source: apiSuccess ? "api-empty" : "all-fallbacks-exhausted",
+  };
 }
 
 /**

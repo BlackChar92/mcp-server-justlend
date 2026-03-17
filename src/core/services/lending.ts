@@ -260,13 +260,12 @@ export async function borrow(
   const addresses = getJustLendAddresses(network);
   const comptroller = tronWeb.contract(COMPTROLLER_ABI, addresses.comptroller);
 
-  // 💡 动态获取真正的 Oracle 地址
   const oracleAddressHex = await comptroller.methods.oracle().call();
   const realOracleAddress = tronWeb.address.fromHex(oracleAddressHex);
 
-  const assetsIn: string[] = await comptroller.methods.getAssetsIn(walletAddress).call();
+  const assetsInRaw: string[] = await comptroller.methods.getAssetsIn(walletAddress).call();
 
-  if (assetsIn.length === 0) {
+  if (assetsInRaw.length === 0) {
     throw new Error(
       `No borrowing capacity. You need to supply assets and enable them as collateral (enter_market) before borrowing.`
     );
@@ -286,8 +285,11 @@ export async function borrow(
   let totalAdjustedCollateralUSD = 0;
   let totalBorrowUSD = 0;
 
-  for (const asset of assetsIn) {
+  for (const rawAsset of assetsInRaw) {
     try {
+      // 💡 核心修复：将底层返回的 Hex 地址强制转换为标准的 T 开头地址
+      const asset = tronWeb.address.fromHex(rawAsset);
+
       const assetInfo = getJTokenInfo(asset, network);
       const jToken = tronWeb.contract(JTOKEN_ABI, asset);
       const snapshot = await jToken.methods.getAccountSnapshot(walletAddress).call();
@@ -297,7 +299,6 @@ export async function borrow(
       const exchangeRateMantissa = BigInt(snapshot[3] ?? snapshot.exchangeRateMantissa ?? 0);
       const supplyBalanceRaw = jTokenBalance * exchangeRateMantissa / MANTISSA_18;
 
-      // 💡 使用新的兜底方法获取美元价值
       const assetPriceUSD = await getAssetPriceUSD(tronWeb, realOracleAddress, asset, assetInfo, network);
 
       const marketInfo = await comptroller.methods.markets(asset).call();
@@ -321,7 +322,9 @@ export async function borrow(
         adjustedValueUSD,
         borrowBalanceUSD,
       });
-    } catch { /* skip unavailable markets */ }
+    } catch (e) {
+      console.error(`[Borrow Debug] Skipped asset ${rawAsset}:`, e);
+    }
   }
 
   const availableLiquidityUSD = totalAdjustedCollateralUSD - totalBorrowUSD;
@@ -340,7 +343,6 @@ export async function borrow(
     );
   }
 
-  // 💡 使用新的兜底方法获取借款目标代币的价值
   const targetPriceUSD = await getAssetPriceUSD(tronWeb, realOracleAddress, info.address, info, network);
 
   if (targetPriceUSD === 0) {
@@ -506,19 +508,21 @@ export async function exitMarket(
     );
   }
 
-  // 💡 动态获取真正的 Oracle 地址
   const oracleAddressHex = await comptroller.methods.oracle().call();
   const realOracleAddress = tronWeb.address.fromHex(oracleAddressHex);
 
-  const assetsIn: string[] = await comptroller.methods.getAssetsIn(walletAddress).call();
+  const assetsInRaw: string[] = await comptroller.methods.getAssetsIn(walletAddress).call();
 
   const MANTISSA_18 = BigInt(1e18);
   let totalAdjustedCollateralUSD = 0;
   let totalBorrowUSD = 0;
   let removedCollateralUSD = 0;
 
-  for (const asset of assetsIn) {
+  for (const rawAsset of assetsInRaw) {
     try {
+      // 💡 核心修复：十六进制转换
+      const asset = tronWeb.address.fromHex(rawAsset);
+
       const assetInfo = getJTokenInfo(asset, network);
       const assetJToken = tronWeb.contract(JTOKEN_ABI, asset);
       const assetSnapshot = await assetJToken.methods.getAccountSnapshot(walletAddress).call();
@@ -529,7 +533,6 @@ export async function exitMarket(
 
       const supplyBalanceRaw = jTokenBal * exchangeRateMantissa / MANTISSA_18;
 
-      // 💡 使用新的兜底方法获取美元价值
       const assetPriceUSD = await getAssetPriceUSD(tronWeb, realOracleAddress, asset, assetInfo, network);
 
       const marketInfo = await comptroller.methods.markets(asset).call();

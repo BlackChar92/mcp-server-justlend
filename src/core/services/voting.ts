@@ -79,16 +79,70 @@ const HARDCODED_PROPOSALS: Record<number, { title?: string; content?: string }> 
   39: { title: "Proposal to Lower the Collateral Factor of USDDOLD Market to 50%" }
 };
 
+// ============================================================================
+// READ — Proposal List (Primary: On-chain, Fallback: API)
+// ============================================================================
 export async function getProposalList(network = "mainnet"): Promise<{ proposals: Proposal[]; total: number; }> {
-  const host = getApiHost(network);
   try {
+    // --- 1. 优先尝试从链上获取最新 20 条提案 ---
+    const tronWeb = getTronWeb(network);
+    const addresses = getJustLendAddresses(network);
+    const contract = tronWeb.contract(GOVERNOR_ALPHA_ABI, addresses.governorAlpha);
+
+    const countBigInt = await contract.methods.proposalCount().call();
+    const count = Number(countBigInt.toString());
+
+    if (count === 0) return { proposals: [], total: 0 };
+
+    const proposalList: Proposal[] = [];
+    const startId = count;
+    // 限制最多一次拉取 20 条，避免节点限流或超时
+    const endId = Math.max(1, count - 19);
+
+    // 并发请求提案状态，大幅提升链上查询速度
+    const statePromises = [];
+    for (let pId = startId; pId >= endId; pId--) {
+      statePromises.push(
+        contract.methods.state(pId).call()
+          .then((stateBigInt: any) => ({ pId, stateNum: Number(stateBigInt.toString()) }))
+          .catch(() => ({ pId, stateNum: -1 })) // 忽略错误项
+      );
+    }
+
+    const states = await Promise.all(statePromises);
+
+    for (const { pId, stateNum } of states) {
+      if (stateNum === -1) continue;
+      const hardcoded = HARDCODED_PROPOSALS[pId];
+
+      proposalList.push({
+        proposalId: pId,
+        state: stateNum,
+        stateText: PROPOSAL_STATES[stateNum] || `Unknown(${stateNum})`,
+        title: hardcoded?.title || `[Proposal #${pId}]`,
+        content: hardcoded?.content || "Details fetched directly from on-chain contract.",
+        forVotes: "0",      // 若需精准票数需补充 proposals(id) 调用，目前占位处理
+        againstVotes: "0",
+        abstainVotes: "0",
+      });
+    }
+
+    // 按 ID 倒序
+    proposalList.sort((a, b) => b.proposalId - a.proposalId);
+    return { proposals: proposalList, total: count };
+
+  } catch (error) {
+    console.error(`[API Fallback] On-chain proposal query failed, falling back to API:`, error);
+
+    // --- 2. 链上失败时，兜底请求后端 API ---
+    const host = getApiHost(network);
     const block = await getCurrentBlock(network);
     const url = `${host}/justlend/gov/proposalList?block=${block}`;
     const response = await fetch(url);
     const data = await response.json();
 
     if (data.code !== 0 && data.message !== "SUCCESS") {
-      throw new Error(`API returned error: ${data.message || "Unknown error"}`);
+      throw new Error(`Both On-chain & API returned errors: ${data.message || "Unknown error"}`);
     }
 
     const proposalList: Proposal[] = (data.data?.proposalList || []).map((item: any) => {
@@ -114,33 +168,6 @@ export async function getProposalList(network = "mainnet"): Promise<{ proposals:
 
     proposalList.sort((a, b) => b.proposalId - a.proposalId);
     return { proposals: proposalList, total: proposalList.length };
-  } catch (error) {
-    console.error(`[API Fallback] Fetching latest proposal from contract due to API failure:`, error);
-    const tronWeb = getTronWeb(network);
-    const addresses = getJustLendAddresses(network);
-    const contract = tronWeb.contract(GOVERNOR_ALPHA_ABI, addresses.governorAlpha);
-
-    const countBigInt = await contract.methods.proposalCount().call();
-    const latestProposalId = Number(countBigInt.toString());
-
-    if (latestProposalId === 0) return { proposals: [], total: 0 };
-
-    const stateBigInt = await contract.methods.state(latestProposalId).call();
-    const stateNum = Number(stateBigInt.toString());
-    const hardcoded = HARDCODED_PROPOSALS[latestProposalId];
-
-    const latestProposal: Proposal = {
-      proposalId: latestProposalId,
-      state: stateNum,
-      stateText: PROPOSAL_STATES[stateNum] || `Unknown(${stateNum})`,
-      title: hardcoded?.title || `[Proposal #${latestProposalId}]`,
-      content: hardcoded?.content || "Details fetched from on-chain fallback.",
-      forVotes: "0",
-      againstVotes: "0",
-      abstainVotes: "0",
-    };
-
-    return { proposals: [latestProposal], total: latestProposalId };
   }
 }
 
@@ -154,12 +181,60 @@ export interface UserVoteStatus {
   stateText: string;
 }
 
+// ============================================================================
+// READ — User Vote Status (Primary: On-chain, Fallback: API)
+// ============================================================================
 export async function getUserVoteStatus(
   address: string,
   network = "mainnet",
 ): Promise<{ statusList: UserVoteStatus[]; votedProposals: number[]; withdrawableProposals: UserVoteStatus[]; }> {
-  const host = getApiHost(network);
   try {
+    // --- 1. 优先尝试从链上获取用户最近 20 条提案的投票状态 ---
+    const tronWeb = getTronWeb(network);
+    const addresses = getJustLendAddresses(network);
+    const contract = tronWeb.contract(GOVERNOR_ALPHA_ABI, addresses.governorAlpha);
+
+    const proposalCount = await contract.methods.proposalCount().call();
+    const count = Number(proposalCount.toString());
+    const statusList: UserVoteStatus[] = [];
+
+    const startId = count;
+    const endId = Math.max(1, count - 19);
+
+    for (let pId = startId; pId >= endId; pId--) {
+      try {
+        const receipt = await contract.methods.getReceipt(pId, address).call();
+        const hasVoted = receipt.hasVoted || receipt[0];
+
+        if (hasVoted) {
+          const support = Number((receipt.support || receipt[1]).toString());
+          const votesRaw = BigInt((receipt.votes || receipt[2]).toString());
+          const votesFmt = formatTokenAmount(votesRaw);
+          const pState = await contract.methods.state(pId).call();
+          const stateNum = Number(pState.toString());
+
+          statusList.push({
+            proposalId: pId,
+            forVotes: support === 1 ? votesFmt : "0",
+            againstVotes: support === 0 ? votesFmt : "0",
+            abstainVotes: support === 2 ? votesFmt : "0",
+            canWithdraw: stateNum !== 1, // 非活跃状态即可提取
+            state: stateNum,
+            stateText: PROPOSAL_STATES[stateNum] || `Unknown(${stateNum})`,
+          });
+        }
+      } catch (err) { }
+    }
+
+    const votedProposals = statusList.map(i => i.proposalId);
+    const withdrawableProposals = statusList.filter(i => i.canWithdraw);
+    return { statusList, votedProposals, withdrawableProposals };
+
+  } catch (error) {
+    console.error(`[API Fallback] On-chain user vote query failed, falling back to API:`, error);
+
+    // --- 2. 链上失败时，兜底请求后端 API ---
+    const host = getApiHost(network);
     const block = await getCurrentBlock(network);
     const url = `${host}/justlend/gov/voteStatus?account=${encodeURIComponent(address)}&block=${block}`;
     const response = await fetch(url);
@@ -178,44 +253,6 @@ export async function getUserVoteStatus(
       if (hasVoted) votedProposals.push(item.proposalId);
       if (item.canWithdraw && item.state !== 2) withdrawableProposals.push(item);
     }
-    return { statusList, votedProposals, withdrawableProposals };
-  } catch (error) {
-    console.error(`[API Fallback] Fetching user vote status from contract due to:`, error);
-    const tronWeb = getTronWeb(network);
-    const addresses = getJustLendAddresses(network);
-    const contract = tronWeb.contract(GOVERNOR_ALPHA_ABI, addresses.governorAlpha);
-
-    const proposalCount = await contract.methods.proposalCount().call();
-    const count = Number(proposalCount.toString());
-    const statusList: UserVoteStatus[] = [];
-
-    for (let pId = count; pId >= Math.max(1, count - 10); pId--) {
-      try {
-        const receipt = await contract.methods.getReceipt(pId, address).call();
-        const hasVoted = receipt.hasVoted || receipt[0];
-
-        if (hasVoted) {
-          const support = Number((receipt.support || receipt[1]).toString());
-          const votesRaw = BigInt((receipt.votes || receipt[2]).toString());
-          const votesFmt = formatTokenAmount(votesRaw);
-          const pState = await contract.methods.state(pId).call();
-          const stateNum = Number(pState.toString());
-
-          statusList.push({
-            proposalId: pId,
-            forVotes: support === 1 ? votesFmt : "0",
-            againstVotes: support === 0 ? votesFmt : "0",
-            abstainVotes: support === 2 ? votesFmt : "0",
-            canWithdraw: stateNum !== 1,
-            state: stateNum,
-            stateText: PROPOSAL_STATES[stateNum] || `Unknown(${stateNum})`,
-          });
-        }
-      } catch (err) { }
-    }
-
-    const votedProposals = statusList.map(i => i.proposalId);
-    const withdrawableProposals = statusList.filter(i => i.canWithdraw);
     return { statusList, votedProposals, withdrawableProposals };
   }
 }

@@ -311,7 +311,7 @@ export const JUSTLEND_ADDRESSES: Record<TronNetwork, JustLendAddresses> = {
       proxy: "TZ8du1HkatTWDbS6FLZei4dQfjfpSm9mxp",
       market: "TSos1xxjqMrGKBxycVmtgrnFvv9M6FDFUX",
     },
-    energyRateModel: "TXm1R4t86DR8rL2r535dKVDwifp1eFXPb5",
+    energyRateModel: "TFHzFfBCS8hWV19v1psMZPg4TcWNc1W5LB",
     jTokens: {
       // ====================================================================
       // 活跃市场 (isValid=1, mintPaused=0)

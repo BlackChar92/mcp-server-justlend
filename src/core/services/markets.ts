@@ -1,16 +1,11 @@
 /**
  * JustLend V1 Market Data Services
- *
- * VERSION: JustLend V1
- * All calculation functions (APY, utilization, exchange rate) are based on JustLend V1 logic.
- * Interest rate model: Compound V2-style per-block rates.
  */
 
 import { getTronWeb } from "./clients.js";
 import { getJustLendAddresses, getAllJTokens, getApiHost, type JTokenInfo } from "../chains.js";
 import { JTOKEN_ABI, COMPTROLLER_ABI, PRICE_ORACLE_ABI } from "../abis.js";
 
-// V1 Constants: TRON produces ~1 block per 3 seconds, ~28,800 blocks/day, ~10,512,000 blocks/year
 const BLOCKS_PER_YEAR = 10_512_000;
 const MANTISSA = 1e18;
 
@@ -52,17 +47,23 @@ function formatUnits(raw: bigint, decimals: number): string {
 /**
  * Fetch asset USD price from API using foolproof math: depositedUSD / underlyingAmount
  */
-async function fetchPriceFromAPI(jTokenAddress: string, underlyingDecimals: number, network: string): Promise<number> {
+async function fetchPriceFromAPI(underlyingSymbol: string, underlyingDecimals: number, network: string): Promise<number> {
   const tryFetch = async (targetNetwork: string) => {
     const host = targetNetwork === "nile" ? "https://nileapi.justlend.org" : "https://labc.ablesdxd.link";
-    console.error(`[Price Fallback] Querying market data from API: ${host}...`);
-
     const resp = await fetch(`${host}/justlend/markets`);
     const data = await resp.json();
-    if (data.code !== 0 || !data.data || !data.data.jtokenList) throw new Error("Invalid API data");
+    if (data.code !== 0 || !data.data || !data.data.jtokenList) {
+      throw new Error(`Invalid API response from ${host}`);
+    }
 
-    const market = data.data.jtokenList.find((m: any) => m.jtokenAddress.toLowerCase() === jTokenAddress.toLowerCase());
-    if (!market) throw new Error(`Market not found in API for address: ${jTokenAddress}`);
+    // 💡 核心修复：使用 Symbol 匹配，而不是地址。这样跨网兜底时才不会找不到！
+    const market = data.data.jtokenList.find((m: any) =>
+      m.collateralSymbol.toUpperCase() === underlyingSymbol.toUpperCase()
+    );
+
+    if (!market) {
+      throw new Error(`Market for symbol ${underlyingSymbol} not found on ${targetNetwork} API`);
+    }
 
     const depositedUSD = Number(market.depositedUSD || 0);
     const totalSupplyRaw = Number(market.totalSupply || 0);
@@ -70,30 +71,27 @@ async function fetchPriceFromAPI(jTokenAddress: string, underlyingDecimals: numb
 
     if (depositedUSD === 0 || totalSupplyRaw === 0 || exchangeRate === 0) return 0;
 
-    // 经典 Compound 数学换算：计算真实的底层代币总数量
     const underlyingRaw = (totalSupplyRaw * exchangeRate) / 1e18;
     const underlyingAmount = underlyingRaw / (10 ** underlyingDecimals);
 
-    // 反推美金单价
-    const price = depositedUSD / underlyingAmount;
-    console.error(`[Price Fallback] Success! Derived price for ${market.collateralSymbol} = $${price.toFixed(4)}`);
-    return price;
+    return depositedUSD / underlyingAmount;
   };
 
   try {
-    return await tryFetch(network);
+    const price = await tryFetch(network);
+    if (price > 0) return price;
+    throw new Error(`Current network (${network}) API returned price 0`);
   } catch (err: any) {
-    console.warn(`[Price Fallback] API fetch failed for ${network}: ${err.message}`);
     if (network === "nile") {
       try {
-        console.error(`[Price Fallback] Engaging ultimate fallback -> querying Mainnet API...`);
-        return await tryFetch("mainnet"); // 终极兜底
+        // 💡 跨网终极兜底：去主网捞数据
+        const mainnetPrice = await tryFetch("mainnet");
+        if (mainnetPrice > 0) return mainnetPrice;
       } catch (mainnetErr: any) {
-        console.warn(`[Price Fallback] Mainnet API fallback also failed: ${mainnetErr.message}`);
-        return 0;
+        throw new Error(`[Price Exception] Nile API failed (${err.message}) AND Mainnet fallback failed (${mainnetErr.message}).`);
       }
     }
-    return 0;
+    throw new Error(`[Price Exception] API fetch failed: ${err.message}`);
   }
 }
 
@@ -140,26 +138,24 @@ export async function getMarketData(jTokenInfo: JTokenInfo, network = "mainnet")
 
   try {
     const realOracleAddress = tronWeb.address.fromHex(oracleAddressHex);
-    console.error(`\n================================`);
-    console.error(`[Oracle Debug] Querying Market: ${jTokenInfo.symbol} on ${network.toUpperCase()}`);
-    console.error(`[Oracle Debug] Real Oracle Address: ${realOracleAddress}`);
-
     const oracle = tronWeb.contract(PRICE_ORACLE_ABI, realOracleAddress);
     underlyingPriceRaw = BigInt(await oracle.methods.getUnderlyingPrice(jTokenInfo.address).call());
-
-    console.error(`[Oracle Debug] Raw Price from Chain: ${underlyingPriceRaw}`);
-    console.error(`================================\n`);
   } catch (err: any) {
-    console.warn(`[Oracle Debug] Failed to fetch on-chain price: ${err.message}`);
+    // 链上报错静默，交由下游 API 兜底
   }
 
-  // 价格决策逻辑：如果是 Nile 测试网，直接无视它那大于 0 的假数据，强制走 API！
+  // 价格决策：如果是测试网或者是0，强制走 API 兜底
   if (underlyingPriceRaw > 0n && network === "mainnet") {
     const priceScale = 10 ** (36 - jTokenInfo.underlyingDecimals);
     priceUSD = Number(underlyingPriceRaw) / priceScale;
   } else {
-    console.error(`[Oracle Debug] Nile network or price is 0, triggering API fallback logic...`);
-    priceUSD = await fetchPriceFromAPI(jTokenInfo.address, jTokenInfo.underlyingDecimals, network);
+    // 传入 UnderlyingSymbol 进行跨网查找
+    priceUSD = await fetchPriceFromAPI(jTokenInfo.underlyingSymbol, jTokenInfo.underlyingDecimals, network);
+  }
+
+  // 💡 价格为 0 时强制抛出异常！
+  if (priceUSD === 0) {
+    throw new Error(`[Price Exception] Final computed price for ${jTokenInfo.symbol} is 0. This is considered an anomaly. Oracle raw: ${underlyingPriceRaw}`);
   }
 
   const supplyAPY = rateToAPY(BigInt(supplyRatePerBlock));

@@ -308,8 +308,8 @@ export const JUSTLEND_ADDRESSES: Record<TronNetwork, JustLendAddresses> = {
       multi: "TQvh3Q94PchENyF2iM7uJH338CcWUfHxMG",
     },
     strx: {
-      proxy: "TJaRfuzcxEKGN8sWrkqRUfg9hARNzNajLS",
-      market: "TPNcdjfGLjgxh7wVLv6NuLsAcUTzUuEE55",
+      proxy: "TZ8du1HkatTWDbS6FLZei4dQfjfpSm9mxp",
+      market: "TSos1xxjqMrGKBxycVmtgrnFvv9M6FDFUX",
     },
     energyRateModel: "TXm1R4t86DR8rL2r535dKVDwifp1eFXPb5",
     jTokens: {

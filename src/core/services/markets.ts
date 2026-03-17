@@ -55,7 +55,7 @@ function formatUnits(raw: bigint, decimals: number): string {
 async function fetchPriceFromAPI(jTokenAddress: string, underlyingDecimals: number, network: string): Promise<number> {
   const tryFetch = async (targetNetwork: string) => {
     const host = targetNetwork === "nile" ? "https://nileapi.justlend.org" : "https://labc.ablesdxd.link";
-    console.log(`[Price Fallback] Querying market data from API: ${host}...`);
+    console.error(`[Price Fallback] Querying market data from API: ${host}...`);
 
     const resp = await fetch(`${host}/justlend/markets`);
     const data = await resp.json();
@@ -76,7 +76,7 @@ async function fetchPriceFromAPI(jTokenAddress: string, underlyingDecimals: numb
 
     // 反推美金单价
     const price = depositedUSD / underlyingAmount;
-    console.log(`[Price Fallback] Success! Derived price for ${market.collateralSymbol} = $${price.toFixed(4)}`);
+    console.error(`[Price Fallback] Success! Derived price for ${market.collateralSymbol} = $${price.toFixed(4)}`);
     return price;
   };
 
@@ -86,7 +86,7 @@ async function fetchPriceFromAPI(jTokenAddress: string, underlyingDecimals: numb
     console.warn(`[Price Fallback] API fetch failed for ${network}: ${err.message}`);
     if (network === "nile") {
       try {
-        console.log(`[Price Fallback] Engaging ultimate fallback -> querying Mainnet API...`);
+        console.error(`[Price Fallback] Engaging ultimate fallback -> querying Mainnet API...`);
         return await tryFetch("mainnet"); // 终极兜底
       } catch (mainnetErr: any) {
         console.warn(`[Price Fallback] Mainnet API fallback also failed: ${mainnetErr.message}`);
@@ -140,25 +140,25 @@ export async function getMarketData(jTokenInfo: JTokenInfo, network = "mainnet")
 
   try {
     const realOracleAddress = tronWeb.address.fromHex(oracleAddressHex);
-    console.log(`\n================================`);
-    console.log(`[Oracle Debug] Querying Market: ${jTokenInfo.symbol} on ${network.toUpperCase()}`);
-    console.log(`[Oracle Debug] Real Oracle Address: ${realOracleAddress}`);
+    console.error(`\n================================`);
+    console.error(`[Oracle Debug] Querying Market: ${jTokenInfo.symbol} on ${network.toUpperCase()}`);
+    console.error(`[Oracle Debug] Real Oracle Address: ${realOracleAddress}`);
 
     const oracle = tronWeb.contract(PRICE_ORACLE_ABI, realOracleAddress);
     underlyingPriceRaw = BigInt(await oracle.methods.getUnderlyingPrice(jTokenInfo.address).call());
 
-    console.log(`[Oracle Debug] Raw Price from Chain: ${underlyingPriceRaw}`);
-    console.log(`================================\n`);
+    console.error(`[Oracle Debug] Raw Price from Chain: ${underlyingPriceRaw}`);
+    console.error(`================================\n`);
   } catch (err: any) {
     console.warn(`[Oracle Debug] Failed to fetch on-chain price: ${err.message}`);
   }
 
-  // 价格决策逻辑
-  if (underlyingPriceRaw > 0n) {
+  // 价格决策逻辑：如果是 Nile 测试网，直接无视它那大于 0 的假数据，强制走 API！
+  if (underlyingPriceRaw > 0n && network === "mainnet") {
     const priceScale = 10 ** (36 - jTokenInfo.underlyingDecimals);
     priceUSD = Number(underlyingPriceRaw) / priceScale;
   } else {
-    console.log(`[Oracle Debug] On-chain price is 0, triggering API fallback logic...`);
+    console.error(`[Oracle Debug] Nile network or price is 0, triggering API fallback logic...`);
     priceUSD = await fetchPriceFromAPI(jTokenInfo.address, jTokenInfo.underlyingDecimals, network);
   }
 

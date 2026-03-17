@@ -5,5 +5,5 @@ let lines = content.split('\n');
 for (let i = 0; i < lines.length; i++) {
   openCount += (lines[i].match(/\{/g) || []).length;
   openCount -= (lines[i].match(/\}/g) || []).length;
-  if(openCount === 0 || openCount === 1) console.log(`Line ${i+1}: count ${openCount}`);
+  if (openCount === 0 || openCount === 1) console.error(`Line ${i + 1}: count ${openCount}`);
 }

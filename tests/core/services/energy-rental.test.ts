@@ -84,7 +84,7 @@ describe("getEnergyRentalDashboard (Mainnet)", () => {
     expect(Number(data.energyStakePerTrx)).toBeGreaterThan(0);
     expect(data.sTrx1Trx).toBeDefined();
     expect(data.trx1sTrx).toBeDefined();
-    console.log(`Dashboard: TRX price=$${data.trxPrice}, APY=${data.totalApy}%, energyPerTRX=${data.energyStakePerTrx}`);
+    console.error(`Dashboard: TRX price=$${data.trxPrice}, APY=${data.totalApy}%, energyPerTRX=${data.energyStakePerTrx}`);
   }), 30_000);
 });
 
@@ -105,7 +105,7 @@ describe("getEnergyRentalParams (Mainnet)", () => {
     expect(typeof params.maxRentable).toBe("number");
     expect(typeof params.rentPaused).toBe("boolean");
     expect(typeof params.usageChargeRatio).toBe("number");
-    console.log(`Params: threshold=${params.liquidateThreshold}s, feeRatio=${params.feeRatio}, minFee=${params.minFee} TRX, paused=${params.rentPaused}`);
+    console.error(`Params: threshold=${params.liquidateThreshold}s, feeRatio=${params.feeRatio}, minFee=${params.minFee} TRX, paused=${params.rentPaused}`);
   }), 30_000);
 });
 
@@ -120,7 +120,7 @@ describe("getRentalRate (Mainnet)", () => {
     expect(typeof rate.effectiveRate).toBe("number");
     expect(rate.effectiveRate).toBeGreaterThan(0);
     expect(rate.effectiveRate).toBe(Math.max(rate.rentalRate, rate.stableRate));
-    console.log(`Rate: rental=${rate.rentalRate}, stable=${rate.stableRate}, effective=${rate.effectiveRate}`);
+    console.error(`Rate: rental=${rate.rentalRate}, stable=${rate.stableRate}, effective=${rate.effectiveRate}`);
   }), 30_000);
 });
 
@@ -142,7 +142,7 @@ describe("calculateRentalPrice (Mainnet)", () => {
     expect(estimate.totalPrepayment).toBeGreaterThan(0);
     expect(typeof estimate.securityDeposit).toBe("number");
     expect(typeof estimate.dailyRentalCost).toBe("number");
-    console.log(`Price: ${estimate.trxAmount} TRX, prepayment=${estimate.totalPrepayment.toFixed(2)} TRX, daily=${estimate.dailyRentalCost.toFixed(2)} TRX`);
+    console.error(`Price: ${estimate.trxAmount} TRX, prepayment=${estimate.totalPrepayment.toFixed(2)} TRX, daily=${estimate.dailyRentalCost.toFixed(2)} TRX`);
   }), 30_000);
 });
 
@@ -159,7 +159,7 @@ describe("getUserRentalOrders (Mainnet)", () => {
     if (data.total !== undefined) {
       expect(typeof data.total).toBe("number");
     }
-    console.log(`Orders: ${data.total || 0} total`);
+    console.error(`Orders: ${data.total || 0} total`);
   }), 30_000);
 });
 
@@ -172,7 +172,7 @@ describe("getRentInfo (Mainnet)", () => {
     expect(typeof info.securityDeposit).toBe("number");
     expect(typeof info.rentBalance).toBe("number");
     expect(typeof info.hasActiveRental).toBe("boolean");
-    console.log(`RentInfo: deposit=${info.securityDeposit}, balance=${info.rentBalance}, active=${info.hasActiveRental}`);
+    console.error(`RentInfo: deposit=${info.securityDeposit}, balance=${info.rentBalance}, active=${info.hasActiveRental}`);
   }), 30_000);
 });
 
@@ -195,7 +195,7 @@ describe("rentEnergy (write — skipped by default)", () => {
       );
       expect(result.txId).toBeDefined();
       expect(typeof result.txId).toBe("string");
-      console.log(`Rent TX: ${result.txId}`);
+      console.error(`Rent TX: ${result.txId}`);
     },
     120_000,
   );
@@ -214,7 +214,7 @@ describe("returnEnergyRental (write — skipped by default)", () => {
       );
       expect(result.txId).toBeDefined();
       expect(typeof result.txId).toBe("string");
-      console.log(`Return TX: ${result.txId}`);
+      console.error(`Return TX: ${result.txId}`);
     },
     120_000,
   );

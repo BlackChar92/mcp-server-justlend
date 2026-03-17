@@ -79,7 +79,7 @@ describe("getStrxDashboard (Mainnet)", () => {
     expect(Number(data.energyStakePerTrx)).toBeGreaterThan(0);
     expect(data.sTrx1Trx).toBeDefined();
     expect(data.trx1sTrx).toBeDefined();
-    console.log(`sTRX Dashboard: price=$${data.trxPrice}, APY=${data.totalApy}%, delay=${data.unfreezeDelayDays}d`);
+    console.error(`sTRX Dashboard: price=$${data.trxPrice}, APY=${data.totalApy}%, delay=${data.unfreezeDelayDays}d`);
   }), 30_000);
 });
 
@@ -94,7 +94,7 @@ describe("getStrxStakeAccount (Mainnet)", () => {
     expect(data.accountIncome).toBeDefined();
     expect(data.accountCanClaimAmount).toBeDefined();
     expect(data.accountWithDrawAmount).toBeDefined();
-    console.log(`sTRX Account: supply=${data.accountSupply}, income=${data.accountIncome}, claimable=${data.accountCanClaimAmount}`);
+    console.error(`sTRX Account: supply=${data.accountSupply}, income=${data.accountIncome}, claimable=${data.accountCanClaimAmount}`);
   }), 30_000);
 });
 
@@ -109,7 +109,7 @@ describe("getStrxBalance (Mainnet)", () => {
     expect(typeof balance.formatted).toBe("string");
     expect(balance.symbol).toBe("sTRX");
     expect(balance.decimals).toBe(18);
-    console.log(`sTRX Balance: ${balance.formatted} sTRX`);
+    console.error(`sTRX Balance: ${balance.formatted} sTRX`);
   }), 30_000);
 
   it("should handle sTRX proxy contract address (self-balance)", skipOn429(async () => {
@@ -117,7 +117,7 @@ describe("getStrxBalance (Mainnet)", () => {
     const balance = await getStrxBalance(STRX_PROXY, "mainnet");
     expect(balance).toBeDefined();
     expect(typeof balance.raw).toBe("bigint");
-    console.log(`sTRX Proxy self-balance: ${balance.formatted} sTRX`);
+    console.error(`sTRX Proxy self-balance: ${balance.formatted} sTRX`);
   }), 30_000);
 });
 
@@ -138,7 +138,7 @@ describe("checkWithdrawalEligibility (Mainnet)", () => {
     expect(typeof eligibility.hasCompletedWithdrawals).toBe("boolean");
     expect(typeof eligibility.unfreezeDelayDays).toBe("number");
     expect(eligibility.roundDetails).toBeInstanceOf(Array);
-    console.log(`Eligibility: staked=${eligibility.hasStakedTrx}, pending=${eligibility.pendingUnstakeRounds}, completed=${eligibility.completedUnstakeRounds}`);
+    console.error(`Eligibility: staked=${eligibility.hasStakedTrx}, pending=${eligibility.pendingUnstakeRounds}, completed=${eligibility.completedUnstakeRounds}`);
   }), 30_000);
 });
 
@@ -156,7 +156,7 @@ describe("stakeTrxToStrx (write — skipped by default)", () => {
       expect(result.txId).toBeDefined();
       expect(typeof result.txId).toBe("string");
       expect(result.stakedTrx).toBe(1);
-      console.log(`Stake TX: ${result.txId}`);
+      console.error(`Stake TX: ${result.txId}`);
     },
     120_000,
   );
@@ -172,7 +172,7 @@ describe("unstakeStrx (write — skipped by default)", () => {
       expect(typeof result.txId).toBe("string");
       expect(result.unstakedStrx).toBe(0.5);
       expect(result.note).toContain("unbonding");
-      console.log(`Unstake TX: ${result.txId}`);
+      console.error(`Unstake TX: ${result.txId}`);
     },
     120_000,
   );
@@ -186,7 +186,7 @@ describe("claimStrxRewards (write — skipped by default)", () => {
       const result = await claimStrxRewards(privateKey, "nile");
       expect(result.txId).toBeDefined();
       expect(typeof result.txId).toBe("string");
-      console.log(`Claim TX: ${result.txId}`);
+      console.error(`Claim TX: ${result.txId}`);
     },
     120_000,
   );

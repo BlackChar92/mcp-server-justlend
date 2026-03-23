@@ -92,10 +92,34 @@ On startup, the server will:
 2. If none found, auto-generate a new encrypted wallet (random password + encrypted private key)
 3. Display the wallet address in the console
 
-You can also use MCP tools at runtime:
-- `get_wallet_address` — shows current address (auto-generates wallet if needed)
-- `import_wallet` — import an existing private key (stored encrypted)
-- `list_wallets` / `set_active_wallet` — manage multiple wallets
+You can also manage wallets via **CLI** or **MCP tools**:
+
+#### CLI (agent-wallet)
+
+The auto-generated wallet and CLI 创建的钱包使用完全相同的加密格式（`~/.agent-wallet/`），互相兼容。
+
+```bash
+# Import an existing private key or mnemonic
+npx agent-wallet add
+
+# Generate a new wallet
+npx agent-wallet generate
+
+# List all wallets
+npx agent-wallet list
+
+# Switch active wallet
+npx agent-wallet activate <wallet-id>
+```
+
+#### MCP Tools (runtime)
+
+| Tool | Description |
+|------|-------------|
+| `get_wallet_address` | Shows current address (auto-generates wallet if needed) |
+| `import_wallet` | Import an existing private key (stored encrypted) |
+| `list_wallets` | List all wallets with IDs, types, addresses |
+| `set_active_wallet` | Switch active wallet by ID |
 
 ```bash
 # (Optional) For automated/CI setups, set the wallet password

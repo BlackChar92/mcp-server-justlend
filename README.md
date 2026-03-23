@@ -76,7 +76,7 @@ This MCP server currently supports **JustLend V1** protocol. All contract addres
 ## Installation
 
 ```bash
-git clone https://github.com/your-org/mcp-server-justlend.git
+git clone https://github.com/justlend/mcp-server-justlend.git
 cd mcp-server-justlend
 npm install
 ```
@@ -95,9 +95,6 @@ On startup, the server will:
 You can also manage wallets via **CLI** or **MCP tools**:
 
 #### CLI (agent-wallet)
-
-The auto-generated wallet and CLI 创建的钱包使用完全相同的加密格式（`~/.agent-wallet/`），互相兼容。
-
 ```bash
 # Import an existing private key or mnemonic
 npx agent-wallet add

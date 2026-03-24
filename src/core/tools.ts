@@ -112,7 +112,9 @@ export function registerJustLendTools(server: McpServer) {
     {
       description:
         "Import an existing wallet from a private key. The key is stored encrypted in ~/.agent-wallet/. " +
-        "Use this to import an existing funded wallet instead of the auto-generated one.",
+        "Use this to import an existing funded wallet instead of the auto-generated one. " +
+        "WARNING: The private key will be transmitted through the MCP protocol and may appear in AI conversation logs. " +
+        "For maximum security, use the agent-wallet CLI directly: `npx agent-wallet import`.",
       inputSchema: {
         privateKey: z.string().describe("Private key hex string (64 characters, with or without 0x prefix)"),
         walletId: z.string().optional().describe("Wallet identifier. Default: 'imported'"),
@@ -126,6 +128,7 @@ export function registerJustLendTools(server: McpServer) {
           address: result.address,
           walletId: result.walletId,
           message: "Wallet imported and encrypted. Set as active if it was the first wallet.",
+          securityNote: "For future imports, prefer using the CLI: `npx agent-wallet import` to avoid exposing keys in conversation logs.",
         }, null, 2) }] };
       } catch (error: any) {
         return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };

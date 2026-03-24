@@ -168,15 +168,56 @@ Add to `.cursor/mcp.json`:
 
 ## Usage
 
+The server supports two transport modes. Both share the same Tools, Resources, and wallet initialization — the difference is how clients connect.
+
+### Stdio Mode (Local AI Clients)
+
 ```bash
-# Stdio mode (for MCP clients)
 npm start
+```
 
-# HTTP/SSE mode (for remote clients)
+The server communicates via stdin/stdout. This is the standard mode for local MCP clients like **Claude Desktop**, **Cursor**, and **Claude Code**, which launch the server as a child process. Single client, no extra configuration needed.
+
+### HTTP/SSE Mode (Remote / Multi-Client)
+
+```bash
 npm run start:http
+```
 
-# Development with auto-reload
-npm run dev
+The server starts an Express HTTP service with Server-Sent Events (SSE) transport. Suitable for **web applications**, **remote clients**, or scenarios where **multiple clients** need to connect concurrently.
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/sse` | GET | SSE connection endpoint — returns a `sessionId` |
+| `/messages?sessionId=xxx` | POST | Send MCP messages for a session |
+| `/health` | GET | Health check (no auth required) |
+
+**Environment variables:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `3001` | HTTP listen port |
+| `MCP_API_KEY` | _(none)_ | Bearer token for authentication. If not set, the server runs **without auth** (not recommended for production) |
+| `MCP_CORS_ORIGIN` | `*` | Allowed CORS origins |
+| `MCP_MAX_SESSIONS` | `100` | Maximum concurrent SSE sessions |
+| `MCP_SESSION_TIMEOUT_MS` | `1800000` | Session idle timeout in ms (default: 30 min) |
+
+Example with authentication:
+
+```bash
+MCP_API_KEY=my-secret-key PORT=8080 npm run start:http
+```
+
+```bash
+# Connect from client
+curl -H "Authorization: Bearer my-secret-key" http://localhost:8080/sse
+```
+
+### Development
+
+```bash
+npm run dev          # Stdio with auto-reload
+npm run dev:http     # HTTP/SSE with auto-reload
 ```
 
 ## API Reference

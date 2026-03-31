@@ -2,6 +2,7 @@ import { getTronWeb } from "./clients.js";
 import { getJustLendAddresses, getAllJTokens, getJTokenInfo, getApiHost, type JTokenInfo } from "../chains.js";
 import { JTOKEN_ABI, COMPTROLLER_ABI, PRICE_ORACLE_ABI, TRC20_ABI } from "../abis.js";
 import { fetchPriceFromAPI } from "./price.js";
+import { multicall } from "./contracts.js";
 
 const MANTISSA = 1e18;
 
@@ -67,29 +68,6 @@ function formatUnits(raw: bigint, decimals: number): string {
 }
 
 // ============================================================================
-// PRICE ORACLE FALLBACK HELPERS (Injected to fix Nile testnet $0 collateral bug)
-// ============================================================================
-
-async function getAssetPriceUSD(tronWeb: any, oracleAddress: string, assetAddress: string, assetInfo: JTokenInfo, network: string): Promise<number> {
-  let priceRaw = 0n;
-  let priceUSD = 0;
-
-  try {
-    const oracle = tronWeb.contract(PRICE_ORACLE_ABI, oracleAddress);
-    priceRaw = BigInt(await oracle.methods.getUnderlyingPrice(assetAddress).call());
-  } catch (err) { }
-
-  // 💡 Nile 测试网或者是0，强制走 API 兜底
-  if (priceRaw > 0n && network === "mainnet") {
-    const decimals = assetInfo.underlyingDecimals;
-    priceUSD = Number(priceRaw) / (10 ** (36 - decimals));
-  } else {
-    priceUSD = await fetchPriceFromAPI(assetInfo.underlyingSymbol, assetInfo.underlyingDecimals, network) ?? 0;
-  }
-  return priceUSD;
-}
-
-// ============================================================================
 // ACCOUNT SUMMARY
 // ============================================================================
 
@@ -118,62 +96,80 @@ export async function getAccountSummary(userAddress: string, network = "mainnet"
     realOracleAddress = tronWeb.address.fromHex(oracleHex);
   } catch (e) { }
 
-  // Fetch position for each market in batches to avoid TronGrid rate limiting (429).
-  const BATCH_SIZE = 3;
-  const BATCH_DELAY_MS = 1000;
+  // Batch-fetch all snapshots + prices via Multicall3 (single RPC call).
+  // Falls back to sequential calls if multicall address is not configured (e.g. Nile testnet).
+  const multicallAddress = addresses.multicall3;
 
-  async function fetchPosition(info: JTokenInfo): Promise<AccountPosition | null> {
-    try {
-      const jToken = tronWeb.contract(JTOKEN_ABI, info.address);
-      const snapshot = await jToken.methods.getAccountSnapshot(userAddress).call();
+  // Build call array: snapshot calls first, then price calls
+  const snapshotCalls = jTokens.map((info) => ({
+    address: info.address,
+    functionName: "getAccountSnapshot",
+    args: [userAddress],
+    abi: JTOKEN_ABI,
+    allowFailure: true,
+  }));
 
-      const jTokenBalance = BigInt(snapshot[1] ?? snapshot.jTokenBalance ?? 0);
-      const borrowBalance = BigInt(snapshot[2] ?? snapshot.borrowBalance ?? 0);
-      const exchangeRateMantissa = BigInt(snapshot[3] ?? snapshot.exchangeRateMantissa ?? 0);
+  const priceCalls = jTokens.map((info) => ({
+    address: realOracleAddress,
+    functionName: "getUnderlyingPrice",
+    args: [info.address],
+    abi: PRICE_ORACLE_ABI,
+    allowFailure: true,
+  }));
 
-      // If no position, skip
-      if (jTokenBalance === 0n && borrowBalance === 0n) return null;
+  const allCalls = [...snapshotCalls, ...priceCalls];
+  const results = await multicall({ calls: allCalls, multicallAddress }, network);
 
-      // Supply balance = jTokenBalance * exchangeRate / 1e18
-      const supplyBalanceRaw = jTokenBalance * exchangeRateMantissa / BigInt(1e18);
+  const snapshotResults = results.slice(0, jTokens.length);
+  const priceResults = results.slice(jTokens.length);
 
-      // 💡 核心修复 3：使用兜底函数精准获取美元单价
-      const priceUSD = await getAssetPriceUSD(tronWeb, realOracleAddress, info.address, info, network);
+  // Process results into positions
+  const positions: AccountPosition[] = [];
+  for (let i = 0; i < jTokens.length; i++) {
+    const info = jTokens[i];
+    const snapshotRes = snapshotResults[i];
 
-      const supplyBalanceHuman = Number(supplyBalanceRaw) / 10 ** info.underlyingDecimals;
-      const borrowBalanceHuman = Number(borrowBalance) / 10 ** info.underlyingDecimals;
+    if (!snapshotRes.success) continue;
 
-      const supplyValueUSD = supplyBalanceHuman * priceUSD;
-      const borrowValueUSD = borrowBalanceHuman * priceUSD;
+    const snapshot = snapshotRes.result;
+    const jTokenBalance = BigInt(snapshot[1] ?? snapshot.jTokenBalance ?? 0);
+    const borrowBalance = BigInt(snapshot[2] ?? snapshot.borrowBalance ?? 0);
+    const exchangeRateMantissa = BigInt(snapshot[3] ?? snapshot.exchangeRateMantissa ?? 0);
 
-      return {
-        jTokenAddress: info.address,
-        symbol: info.symbol,
-        underlyingSymbol: info.underlyingSymbol,
-        jTokenBalance: formatUnits(jTokenBalance, info.decimals),
-        supplyBalance: formatUnits(supplyBalanceRaw, info.underlyingDecimals),
-        borrowBalance: formatUnits(borrowBalance, info.underlyingDecimals),
-        isCollateral: collateralSet.has(info.address.toLowerCase()),
-        exchangeRate: (Number(exchangeRateMantissa) / 1e18).toFixed(10),
-        underlyingPriceUSD: priceUSD.toFixed(6),
-        supplyValueUSD: supplyValueUSD.toFixed(2),
-        borrowValueUSD: borrowValueUSD.toFixed(2),
-      };
-    } catch {
-      return null;
+    if (jTokenBalance === 0n && borrowBalance === 0n) continue;
+
+    const supplyBalanceRaw = jTokenBalance * exchangeRateMantissa / BigInt(1e18);
+
+    // Get price: try multicall result first, then API fallback
+    let priceUSD = 0;
+    const priceRes = priceResults[i];
+    if (priceRes.success) {
+      const priceRaw = BigInt(priceRes.result?.toString() ?? "0");
+      if (priceRaw > 0n && network === "mainnet") {
+        priceUSD = Number(priceRaw) / (10 ** (36 - info.underlyingDecimals));
+      }
     }
-  }
-
-  const allResults: (AccountPosition | null)[] = [];
-  for (let i = 0; i < jTokens.length; i += BATCH_SIZE) {
-    const batch = jTokens.slice(i, i + BATCH_SIZE);
-    const batchResults = await Promise.all(batch.map(fetchPosition));
-    allResults.push(...batchResults);
-    if (i + BATCH_SIZE < jTokens.length) {
-      await new Promise((r) => setTimeout(r, BATCH_DELAY_MS));
+    if (priceUSD === 0) {
+      priceUSD = await fetchPriceFromAPI(info.underlyingSymbol, info.underlyingDecimals, network) ?? 0;
     }
+
+    const supplyBalanceHuman = Number(supplyBalanceRaw) / 10 ** info.underlyingDecimals;
+    const borrowBalanceHuman = Number(borrowBalance) / 10 ** info.underlyingDecimals;
+
+    positions.push({
+      jTokenAddress: info.address,
+      symbol: info.symbol,
+      underlyingSymbol: info.underlyingSymbol,
+      jTokenBalance: formatUnits(jTokenBalance, info.decimals),
+      supplyBalance: formatUnits(supplyBalanceRaw, info.underlyingDecimals),
+      borrowBalance: formatUnits(borrowBalance, info.underlyingDecimals),
+      isCollateral: collateralSet.has(info.address.toLowerCase()),
+      exchangeRate: (Number(exchangeRateMantissa) / 1e18).toFixed(10),
+      underlyingPriceUSD: priceUSD.toFixed(6),
+      supplyValueUSD: (supplyBalanceHuman * priceUSD).toFixed(2),
+      borrowValueUSD: (borrowBalanceHuman * priceUSD).toFixed(2),
+    });
   }
-  const positions = allResults.filter((p): p is AccountPosition => p !== null);
 
   const totalSupplyUSD = positions.reduce((sum, p) => sum + parseFloat(p.supplyValueUSD), 0);
   const totalBorrowUSD = positions.reduce((sum, p) => sum + parseFloat(p.borrowValueUSD), 0);

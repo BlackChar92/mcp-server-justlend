@@ -53,6 +53,8 @@ export interface JustLendAddresses {
   };
   /** Energy rate model contract for rental rate calculations */
   energyRateModel: string;
+  /** Multicall3 contract address (optional — absent on testnets triggers sequential fallback) */
+  multicall3?: string;
   /** Map of symbol → jToken address */
   jTokens: Record<string, JTokenInfo>;
 }

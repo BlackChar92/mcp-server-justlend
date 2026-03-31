@@ -6,8 +6,10 @@ import { getTronWeb } from "./clients.js";
 import { getJustLendAddresses, getAllJTokens, getApiHost, type JTokenInfo } from "../chains.js";
 import { JTOKEN_ABI, COMPTROLLER_ABI, PRICE_ORACLE_ABI } from "../abis.js";
 import { fetchPriceFromAPI } from "./price.js";
+import { cacheGet, cacheSet } from "./cache.js";
 
 const BLOCKS_PER_YEAR = 10_512_000;
+const MARKETS_TTL_MS = 60_000; // 60s
 const MANTISSA = 1e18;
 
 export interface MarketData {
@@ -412,9 +414,14 @@ export async function getAllMarketOverview(network = "mainnet"): Promise<MarketO
  * This is the recommended entry point for getting market overview data.
  */
 export async function getAllMarketsWithFallback(network = "mainnet") {
+  const cacheKey = `markets:all:${network}`;
+  const cached = cacheGet<{ markets: any[]; source: string; note: string }>(cacheKey);
+  if (cached) return cached;
+
+  let result: { markets: any[]; source: string; note: string };
   try {
     const markets = await getAllMarketOverview(network);
-    return {
+    result = {
       markets,
       source: "api" as const,
       note: "totalSupplyAPY = supplyAPY + underlyingIncrementAPY + miningAPY. miningAPY is calculated from daily mining rewards and TVL. underlyingIncrementAPY is the staking yield for wrapped/staked assets (e.g. sTRX ~5.88%, wstUSDT ~1.63%).",
@@ -422,12 +429,14 @@ export async function getAllMarketsWithFallback(network = "mainnet") {
   } catch {
     // API unavailable (e.g. Nile testnet), fallback to on-chain contract queries
     const markets = await getAllMarketData(network);
-    return {
+    result = {
       markets,
       source: "contract" as const,
       note: "Data queried directly from on-chain contracts (API unavailable). Mining rewards and underlying staking APY are not included.",
     };
   }
+  cacheSet(cacheKey, result, MARKETS_TTL_MS);
+  return result;
 }
 
 /**

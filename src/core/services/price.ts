@@ -2,6 +2,10 @@
  * Shared price fetching utilities for JustLend services.
  */
 
+import { cacheGet, cacheSet } from "./cache.js";
+
+const PRICE_TTL_MS = 30_000; // 30s
+
 /**
  * Fetch asset USD price from JustLend API using: depositedUSD / underlyingAmount.
  *
@@ -9,12 +13,17 @@
  * Callers decide how to handle null (throw, return 0, etc.).
  *
  * On nile testnet, automatically falls back to mainnet API if the nile price is unavailable.
+ * Results are cached for 30s per symbol+network.
  */
 export async function fetchPriceFromAPI(
   underlyingSymbol: string,
   underlyingDecimals: number,
   network: string,
 ): Promise<number | null> {
+  const cacheKey = `price:${network}:${underlyingSymbol.toUpperCase()}`;
+  const cached = cacheGet<number>(cacheKey);
+  if (cached !== undefined) return cached;
+
   const tryFetch = async (targetNetwork: string): Promise<number | null> => {
     const host = targetNetwork === "nile"
       ? "https://nileapi.justlend.org"
@@ -43,14 +52,20 @@ export async function fetchPriceFromAPI(
   // Try current network first
   try {
     const price = await tryFetch(network);
-    if (price !== null && price > 0) return price;
+    if (price !== null && price > 0) {
+      cacheSet(cacheKey, price, PRICE_TTL_MS);
+      return price;
+    }
   } catch { /* fall through */ }
 
   // Nile fallback: try mainnet API
   if (network === "nile") {
     try {
       const mainnetPrice = await tryFetch("mainnet");
-      if (mainnetPrice !== null && mainnetPrice > 0) return mainnetPrice;
+      if (mainnetPrice !== null && mainnetPrice > 0) {
+        cacheSet(cacheKey, mainnetPrice, PRICE_TTL_MS);
+        return mainnetPrice;
+      }
     } catch { /* fall through */ }
   }
 

@@ -16,11 +16,13 @@ import { getJustLendAddresses, getApiHost } from "../chains.js";
 import { STRX_ABI } from "../abis.js";
 import { checkResourceSufficiency } from "./lending.js";
 import { safeSend } from "./contracts.js";
+import { cacheGet, cacheSet } from "./cache.js";
 
 const TRX_PRECISION = 1e6;
 const TOKEN_PRECISION = 1e18;
 const DEFAULT_FEE_LIMIT = 200_000_000; // 200 TRX
 const FETCH_TIMEOUT_MS = 15_000;
+const STRX_DASHBOARD_TTL_MS = 60_000; // 60s
 
 const TRON_ADDRESS_RE = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
 
@@ -45,6 +47,10 @@ function fetchWithTimeout(url: string): Promise<Response> {
  * but cannot provide APY, price, or JST reward data.
  */
 export async function getStrxDashboard(network = "mainnet") {
+  const cacheKey = `strx:dashboard:${network}`;
+  const cached = cacheGet<Record<string, any>>(cacheKey);
+  if (cached) return cached;
+
   // Try API first
   try {
     const apiHost = getApiHost(network);
@@ -53,7 +59,7 @@ export async function getStrxDashboard(network = "mainnet") {
     if (json.code !== 0) throw new Error(`API error: ${json.message || "unknown"}`);
 
     const data = json.data;
-    return {
+    const result = {
       trxPrice: data.trxPrice,
       exchangeRate: data.exchangeRate,
       totalApy: data.totalApy,
@@ -67,6 +73,8 @@ export async function getStrxDashboard(network = "mainnet") {
       sTrx1Trx: (1e18 / Number(data.exchangeRate)).toFixed(6),
       trx1sTrx: (Number(data.exchangeRate) / 1e18).toFixed(6),
     };
+    cacheSet(cacheKey, result, STRX_DASHBOARD_TTL_MS);
+    return result;
   } catch {
     // API unavailable, fallback to on-chain
   }
@@ -87,7 +95,7 @@ export async function getStrxDashboard(network = "mainnet") {
   const totalSupply = (Number(totalSupplyRaw) / TOKEN_PRECISION).toString();
   const totalUnfreezable = (Number(totalUnfreezableRaw) / TRX_PRECISION).toString();
 
-  return {
+  const result = {
     trxPrice: null,
     exchangeRate,
     totalApy: null,
@@ -103,6 +111,8 @@ export async function getStrxDashboard(network = "mainnet") {
     source: "contract",
     note: "APY, price, and reward data unavailable (API down). Exchange rate and supply data from on-chain.",
   };
+  cacheSet(cacheKey, result, STRX_DASHBOARD_TTL_MS);
+  return result;
 }
 
 // ============================================================================

@@ -148,6 +148,66 @@ export async function getMarketData(jTokenInfo: JTokenInfo, network = "mainnet")
 }
 
 /**
+ * Fetch single market data from API by jToken address, mapped to MarketData interface.
+ */
+async function getMarketDataFromAPIByToken(jTokenInfo: JTokenInfo, network = "mainnet"): Promise<MarketData> {
+  const host = getApiHost(network);
+  const resp = await fetch(`${host}/justlend/markets`);
+  if (!resp.ok) throw new Error(`Markets API failed: ${resp.status}`);
+  const json = await resp.json();
+  if (json.code !== 0 || !json.data?.jtokenList) throw new Error("Invalid API response");
+
+  const m = json.data.jtokenList.find(
+    (item: any) => item.jtokenAddress?.toLowerCase() === jTokenInfo.address.toLowerCase(),
+  );
+  if (!m) throw new Error(`Market ${jTokenInfo.symbol} not found in API`);
+
+  const depositedUSD = parseFloat(m.depositedUSD || "0");
+  const borrowedUSD = parseFloat(m.borrowedUSD || "0");
+  const totalSupplyRaw = parseFloat(m.totalSupply || "0");
+  const exchangeRate = parseFloat(m.exchangeRate || "0");
+  const underlyingAmount = totalSupplyRaw > 0 && exchangeRate > 0
+    ? (totalSupplyRaw * exchangeRate) / 1e18 / (10 ** jTokenInfo.underlyingDecimals)
+    : 0;
+  const priceUSD = underlyingAmount > 0 ? depositedUSD / underlyingAmount : 0;
+  const utilizationRate = depositedUSD > 0 ? Math.round(borrowedUSD / depositedUSD * 10000) / 100 : 0;
+
+  return {
+    symbol: jTokenInfo.symbol,
+    underlyingSymbol: jTokenInfo.underlyingSymbol,
+    jTokenAddress: jTokenInfo.address,
+    underlyingAddress: jTokenInfo.underlying,
+    supplyAPY: Math.round(parseFloat(m.depositedAPY || "0") * 100 * 100) / 100,
+    borrowAPY: Math.round(parseFloat(m.borrowedAPY || "0") * 100 * 100) / 100,
+    totalSupply: totalSupplyRaw.toString(),
+    totalBorrows: m.totalBorrow || "0",
+    totalReserves: m.totalReserves || "0",
+    availableLiquidity: m.availableLiquidity || "0",
+    exchangeRate: exchangeRate.toFixed(10),
+    collateralFactor: Math.round(parseFloat(m.collateralFactor || "0") / 1e16 * 100) / 100,
+    reserveFactor: Math.round(parseFloat(m.reserveFactor || "0") / 1e16 * 100) / 100,
+    isListed: true,
+    mintPaused: m.mintPaused === "1" || m.mintPaused === 1,
+    borrowPaused: m.borrowPaused === "1" || m.borrowPaused === 1,
+    underlyingPriceUSD: priceUSD.toFixed(6),
+    utilizationRate,
+  };
+}
+
+/**
+ * Get single market data with automatic fallback: on-chain first, API as fallback.
+ */
+export async function getMarketDataWithFallback(jTokenInfo: JTokenInfo, network = "mainnet") {
+  try {
+    const data = await getMarketData(jTokenInfo, network);
+    return { data, source: "contract" as const };
+  } catch {
+    const data = await getMarketDataFromAPIByToken(jTokenInfo, network);
+    return { data, source: "api" as const };
+  }
+}
+
+/**
  * Get market data for all listed JustLend V1 markets.
  *
  * VERSION: V1 - Queries all V1 jToken markets

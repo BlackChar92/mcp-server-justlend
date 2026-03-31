@@ -205,8 +205,16 @@ export function registerJustLendTools(server: McpServer) {
       try {
         const info = getJTokenInfo(market, network);
         if (!info) throw new Error(`Unknown market: ${market}. Use get_supported_markets to see available markets.`);
-        const data = await services.getMarketData(info, network);
-        return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+        const result = await services.getMarketDataWithFallback(info, network);
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              ...result.data,
+              ...(result.source === "api" ? { source: "api" } : {}),
+            }, null, 2),
+          }],
+        };
       } catch (error: any) {
         return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }

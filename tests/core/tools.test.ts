@@ -56,6 +56,30 @@ vi.mock("../../src/core/services/index.js", () => ({
     utilizationRate: 50.51,
   })),
 
+  getMarketDataWithFallback: vi.fn(async () => ({
+    data: {
+      symbol: "jUSDT",
+      underlyingSymbol: "USDT",
+      jTokenAddress: "TXJgMdjVX5dKiQaUi9QobR2d1pTdip5xG3",
+      underlyingAddress: "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+      supplyAPY: 3.25,
+      borrowAPY: 5.50,
+      totalSupply: "100000000.00",
+      totalBorrows: "50000000.00",
+      totalReserves: "1000000.00",
+      availableLiquidity: "49000000.00",
+      exchangeRate: "0.0200000000",
+      collateralFactor: 75,
+      reserveFactor: 10,
+      isListed: true,
+      mintPaused: false,
+      borrowPaused: false,
+      underlyingPriceUSD: "1.000000",
+      utilizationRate: 50.51,
+    },
+    source: "contract",
+  })),
+
   getAllMarketData: vi.fn(async () => [
     {
       symbol: "jUSDT",
@@ -584,7 +608,7 @@ describe("Market Data Tools", () => {
     expect(output.symbol).toBe("jUSDT");
     expect(output.supplyAPY).toBe(3.25);
     expect(output.borrowAPY).toBe(5.50);
-    expect(services.getMarketData).toHaveBeenCalled();
+    expect(services.getMarketDataWithFallback).toHaveBeenCalled();
   });
 
   it("get_market_data should error for unknown market", async () => {
@@ -783,7 +807,7 @@ describe("Error Handling", () => {
   });
 
   it("should return isError: true when service throws", async () => {
-    vi.mocked(services.getMarketData).mockRejectedValueOnce(new Error("Network timeout"));
+    vi.mocked(services.getMarketDataWithFallback).mockRejectedValueOnce(new Error("Network timeout"));
     const result = await callTool("get_market_data", { market: "jUSDT" });
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain("Network timeout");

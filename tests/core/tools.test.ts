@@ -514,6 +514,18 @@ describe("Tool Registration", () => {
     }
   });
 
+  it("should NOT register removed _from_api tools (v1.0.3)", () => {
+    const removedTools = [
+      "get_markets_from_api",
+      "get_dashboard_from_api",
+      "get_jtoken_details_from_api",
+      "get_account_data_from_api",
+    ];
+    for (const name of removedTools) {
+      expect(registeredTools.has(name), `Removed tool "${name}" should NOT be registered`).toBe(false);
+    }
+  });
+
   it("read-only tools should have readOnlyHint: true", () => {
     const readOnlyTools = [
       "get_wallet_address",

@@ -5,6 +5,7 @@
 import { getTronWeb } from "./clients.js";
 import { getJustLendAddresses, getAllJTokens, getApiHost, type JTokenInfo } from "../chains.js";
 import { JTOKEN_ABI, COMPTROLLER_ABI, PRICE_ORACLE_ABI } from "../abis.js";
+import { fetchPriceFromAPI } from "./price.js";
 
 const BLOCKS_PER_YEAR = 10_512_000;
 const MANTISSA = 1e18;
@@ -44,56 +45,6 @@ function formatUnits(raw: bigint, decimals: number): string {
   return value.toFixed(decimals);
 }
 
-/**
- * Fetch asset USD price from API using foolproof math: depositedUSD / underlyingAmount
- */
-async function fetchPriceFromAPI(underlyingSymbol: string, underlyingDecimals: number, network: string): Promise<number> {
-  const tryFetch = async (targetNetwork: string) => {
-    const host = targetNetwork === "nile" ? "https://nileapi.justlend.org" : "https://labc.ablesdxd.link";
-    const resp = await fetch(`${host}/justlend/markets`);
-    const data = await resp.json();
-    if (data.code !== 0 || !data.data || !data.data.jtokenList) {
-      throw new Error(`Invalid API response from ${host}`);
-    }
-
-    // 💡 核心修复：使用 Symbol 匹配，而不是地址。这样跨网兜底时才不会找不到！
-    const market = data.data.jtokenList.find((m: any) =>
-      m.collateralSymbol.toUpperCase() === underlyingSymbol.toUpperCase()
-    );
-
-    if (!market) {
-      throw new Error(`Market for symbol ${underlyingSymbol} not found on ${targetNetwork} API`);
-    }
-
-    const depositedUSD = Number(market.depositedUSD || 0);
-    const totalSupplyRaw = Number(market.totalSupply || 0);
-    const exchangeRate = Number(market.exchangeRate || 0);
-
-    if (depositedUSD === 0 || totalSupplyRaw === 0 || exchangeRate === 0) return 0;
-
-    const underlyingRaw = (totalSupplyRaw * exchangeRate) / 1e18;
-    const underlyingAmount = underlyingRaw / (10 ** underlyingDecimals);
-
-    return depositedUSD / underlyingAmount;
-  };
-
-  try {
-    const price = await tryFetch(network);
-    if (price > 0) return price;
-    throw new Error(`Current network (${network}) API returned price 0`);
-  } catch (err: any) {
-    if (network === "nile") {
-      try {
-        // 💡 跨网终极兜底：去主网捞数据
-        const mainnetPrice = await tryFetch("mainnet");
-        if (mainnetPrice > 0) return mainnetPrice;
-      } catch (mainnetErr: any) {
-        throw new Error(`[Price Exception] Nile API failed (${err.message}) AND Mainnet fallback failed (${mainnetErr.message}).`);
-      }
-    }
-    throw new Error(`[Price Exception] API fetch failed: ${err.message}`);
-  }
-}
 
 /**
  * Get full market data for a single jToken market (V1).
@@ -150,7 +101,11 @@ export async function getMarketData(jTokenInfo: JTokenInfo, network = "mainnet")
     priceUSD = Number(underlyingPriceRaw) / priceScale;
   } else {
     // 传入 UnderlyingSymbol 进行跨网查找
-    priceUSD = await fetchPriceFromAPI(jTokenInfo.underlyingSymbol, jTokenInfo.underlyingDecimals, network);
+    const apiPrice = await fetchPriceFromAPI(jTokenInfo.underlyingSymbol, jTokenInfo.underlyingDecimals, network);
+    if (apiPrice === null) {
+      throw new Error(`[Price Exception] Failed to fetch price for ${jTokenInfo.underlyingSymbol} from API`);
+    }
+    priceUSD = apiPrice;
   }
 
   // 💡 价格为 0 时强制抛出异常！
@@ -390,6 +345,29 @@ export async function getAllMarketOverview(network = "mainnet"): Promise<MarketO
       totalSupplyAPY: `${totalAPY.toFixed(4)}%`,
     };
   });
+}
+
+/**
+ * Get all markets with automatic fallback: API first, on-chain contract queries as fallback.
+ * This is the recommended entry point for getting market overview data.
+ */
+export async function getAllMarketsWithFallback(network = "mainnet") {
+  try {
+    const markets = await getAllMarketOverview(network);
+    return {
+      markets,
+      source: "api" as const,
+      note: "totalSupplyAPY = supplyAPY + underlyingIncrementAPY + miningAPY. miningAPY is calculated from daily mining rewards and TVL. underlyingIncrementAPY is the staking yield for wrapped/staked assets (e.g. sTRX ~5.88%, wstUSDT ~1.63%).",
+    };
+  } catch {
+    // API unavailable (e.g. Nile testnet), fallback to on-chain contract queries
+    const markets = await getAllMarketData(network);
+    return {
+      markets,
+      source: "contract" as const,
+      note: "Data queried directly from on-chain contracts (API unavailable). Mining rewards and underlying staking APY are not included.",
+    };
+  }
 }
 
 /**

@@ -1,6 +1,7 @@
 import { getTronWeb } from "./clients.js";
 import { getJustLendAddresses, getAllJTokens, getJTokenInfo, getApiHost, type JTokenInfo } from "../chains.js";
 import { JTOKEN_ABI, COMPTROLLER_ABI, PRICE_ORACLE_ABI, TRC20_ABI } from "../abis.js";
+import { fetchPriceFromAPI } from "./price.js";
 
 const MANTISSA = 1e18;
 
@@ -69,42 +70,6 @@ function formatUnits(raw: bigint, decimals: number): string {
 // PRICE ORACLE FALLBACK HELPERS (Injected to fix Nile testnet $0 collateral bug)
 // ============================================================================
 
-async function fetchPriceFromAPI(underlyingSymbol: string, underlyingDecimals: number, network: string): Promise<number> {
-  const tryFetch = async (targetNetwork: string) => {
-    const host = targetNetwork === "nile" ? "https://nileapi.justlend.org" : "https://labc.ablesdxd.link";
-    const resp = await fetch(`${host}/justlend/markets`);
-    const data = await resp.json();
-    if (data.code !== 0 || !data.data || !data.data.jtokenList) return 0;
-
-    const market = data.data.jtokenList.find((m: any) =>
-      m.collateralSymbol.toUpperCase() === underlyingSymbol.toUpperCase()
-    );
-    if (!market) return 0;
-
-    const depositedUSD = Number(market.depositedUSD || 0);
-    const totalSupplyRaw = Number(market.totalSupply || 0);
-    const exchangeRate = Number(market.exchangeRate || 0);
-
-    if (depositedUSD === 0 || totalSupplyRaw === 0 || exchangeRate === 0) return 0;
-    const underlyingRaw = (totalSupplyRaw * exchangeRate) / 1e18;
-    const underlyingAmount = underlyingRaw / (10 ** underlyingDecimals);
-    return depositedUSD / underlyingAmount;
-  };
-
-  try {
-    const price = await tryFetch(network);
-    if (price > 0) return price;
-  } catch (err) { }
-
-  if (network === "nile") {
-    try {
-      const mainnetPrice = await tryFetch("mainnet");
-      if (mainnetPrice > 0) return mainnetPrice;
-    } catch (err) { }
-  }
-  return 0;
-}
-
 async function getAssetPriceUSD(tronWeb: any, oracleAddress: string, assetAddress: string, assetInfo: JTokenInfo, network: string): Promise<number> {
   let priceRaw = 0n;
   let priceUSD = 0;
@@ -119,7 +84,7 @@ async function getAssetPriceUSD(tronWeb: any, oracleAddress: string, assetAddres
     const decimals = assetInfo.underlyingDecimals;
     priceUSD = Number(priceRaw) / (10 ** (36 - decimals));
   } else {
-    priceUSD = await fetchPriceFromAPI(assetInfo.underlyingSymbol, assetInfo.underlyingDecimals, network);
+    priceUSD = await fetchPriceFromAPI(assetInfo.underlyingSymbol, assetInfo.underlyingDecimals, network) ?? 0;
   }
   return priceUSD;
 }

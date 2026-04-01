@@ -14,3 +14,17 @@ export function setGlobalNetwork(network: string): void {
   }
   globalNetwork = n;
 }
+
+// --- Wallet Mode ---
+
+export type WalletMode = "browser" | "agent";
+
+let walletMode: WalletMode = "agent";
+
+export function getWalletMode(): WalletMode {
+  return walletMode;
+}
+
+export function setWalletMode(mode: WalletMode): void {
+  walletMode = mode;
+}

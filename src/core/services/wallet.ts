@@ -12,7 +12,7 @@ import { homedir } from "os";
 import { join } from "path";
 import { TronWeb } from "tronweb";
 import { getNetworkConfig } from "../chains.js";
-import { getWalletMode } from "./global.js";
+import { getSessionState, getWalletMode, type SessionState } from "./global.js";
 import { TronWalletSigner } from "../browser-signer/index.js";
 
 export interface ConfiguredWallet {
@@ -39,14 +39,21 @@ export interface WalletStatus {
 let _walletPromise: Promise<Wallet> | null = null;
 let _addressPromise: Promise<string> | null = null;
 
-// Browser wallet signer singleton (lazy-initialized)
-let _browserSigner: TronWalletSigner | null = null;
-
 export function getBrowserSigner(): TronWalletSigner {
-  if (!_browserSigner) {
-    _browserSigner = new TronWalletSigner();
+  const session = getSessionState();
+  if (session.browserSigner instanceof TronWalletSigner) {
+    return session.browserSigner;
   }
-  return _browserSigner;
+  const signer = new TronWalletSigner();
+  session.browserSigner = signer;
+  return signer;
+}
+
+export async function shutdownBrowserSignerForSession(session: SessionState): Promise<void> {
+  if (!(session.browserSigner instanceof TronWalletSigner)) return;
+  const signer = session.browserSigner;
+  session.browserSigner = undefined;
+  await signer.shutdown();
 }
 
 /** Resolve the agent-wallet config directory. */
@@ -167,13 +174,6 @@ export async function importWallet(
     kvStore.initMaster();
   }
 
-  // Save the private key encrypted
-  const keyBytes = Buffer.from(privateKeyHex.replace(/^0x/, ""), "hex");
-  if (keyBytes.length !== 32) {
-    throw new Error("Invalid private key: must be 32 bytes (64 hex characters)");
-  }
-  kvStore.saveSecret(walletId, keyBytes);
-
   // Make wallet ID unique if it already exists
   let finalId = walletId;
   const existing = provider.listWallets().map(([id]) => id);
@@ -183,9 +183,17 @@ export async function importWallet(
     finalId = `${walletId}-${counter}`;
   }
 
+  // Save the private key encrypted under the final unique wallet ID so the
+  // wallet record and secret reference cannot drift apart.
+  const keyBytes = Buffer.from(privateKeyHex.replace(/^0x/, ""), "hex");
+  if (keyBytes.length !== 32) {
+    throw new Error("Invalid private key: must be 32 bytes (64 hex characters)");
+  }
+  kvStore.saveSecret(finalId, keyBytes);
+
   provider.addWallet(finalId, {
     type: "local_secure",
-    params: { secret_ref: walletId },
+    params: { secret_ref: finalId },
   } as WalletConfig, { setActiveIfMissing: true });
 
   // If this is the first wallet or user wants to activate it

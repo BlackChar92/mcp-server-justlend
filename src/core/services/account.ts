@@ -4,8 +4,76 @@ import { JTOKEN_ABI, COMPTROLLER_ABI, PRICE_ORACLE_ABI, TRC20_ABI } from "../abi
 import { fetchPriceFromAPI } from "./price.js";
 import { multicall } from "./contracts.js";
 import { MULTICALL3_BALANCE_ABI } from "./multicall-abi.js";
+import { fetchWithTimeout } from "./http.js";
+import { utils } from "./utils.js";
 
-const MANTISSA = 1e18;
+const MANTISSA_18 = 10n ** 18n;
+const USD_PRICE_SCALE = 36;
+const USD_VALUE_SCALE = 10n ** 36n;
+
+function pow10(decimals: number): bigint {
+  return 10n ** BigInt(decimals);
+}
+
+function divRound(numerator: bigint, denominator: bigint): bigint {
+  if (denominator === 0n) return 0n;
+  return numerator >= 0n
+    ? (numerator + denominator / 2n) / denominator
+    : (numerator - denominator / 2n) / denominator;
+}
+
+function formatScaled(value: bigint, scale: number, fractionDigits: number, trimTrailingZeros = false): string {
+  if (fractionDigits === 0) {
+    return divRound(value, pow10(scale)).toString();
+  }
+
+  const rounded = divRound(value * pow10(fractionDigits), pow10(scale));
+  const divisor = pow10(fractionDigits);
+  const integer = rounded / divisor;
+  const remainder = rounded % divisor;
+  let fraction = remainder.toString().padStart(fractionDigits, "0");
+
+  if (trimTrailingZeros) {
+    fraction = fraction.replace(/0+$/, "");
+  }
+
+  return fraction ? `${integer}.${fraction}` : integer.toString();
+}
+
+function formatDisplayUnits(raw: bigint, decimals: number): string {
+  const divisor = pow10(decimals);
+  const integer = raw / divisor;
+  const remainder = raw % divisor;
+
+  if (remainder === 0n) return integer.toString();
+
+  const fracFull = remainder.toString().padStart(decimals, "0");
+  const maxFrac = integer >= 1_000_000n ? 2 : integer >= 1n ? 6 : decimals;
+  const frac = fracFull.slice(0, maxFrac).replace(/0+$/, "");
+
+  return frac ? `${integer}.${frac}` : integer.toString();
+}
+
+function formatUsdCents(cents: bigint): string {
+  return formatScaled(cents, 2, 2);
+}
+
+function formatRatio(numerator: bigint, denominator: bigint, fractionDigits: number): string {
+  if (denominator === 0n) return "∞";
+  const scaled = divRound(numerator * pow10(fractionDigits), denominator);
+  return formatScaled(scaled, fractionDigits, fractionDigits);
+}
+
+function priceNumberToRaw(priceUSD: number, underlyingDecimals: number): bigint {
+  if (!Number.isFinite(priceUSD) || priceUSD <= 0) return 0n;
+  const normalized = priceUSD.toFixed(18).replace(/0+$/, "").replace(/\.$/, "");
+  return utils.parseUnits(normalized === "" ? "0" : normalized, USD_PRICE_SCALE - underlyingDecimals);
+}
+
+function amountToUsdCents(amountRaw: bigint, priceRaw: bigint): bigint {
+  if (amountRaw === 0n || priceRaw === 0n) return 0n;
+  return divRound(amountRaw * priceRaw * 100n, USD_VALUE_SCALE);
+}
 
 export interface AccountPosition {
   jTokenAddress: string;
@@ -51,21 +119,6 @@ export interface AccountSummary {
   blockTimestamp: number;
   /** ISO timestamp for human readability */
   lastUpdated: string;
-}
-
-function formatUnits(raw: bigint, decimals: number): string {
-  const divisor = BigInt(10) ** BigInt(decimals);
-  const integer = raw / divisor;
-  const remainder = raw % divisor;
-
-  if (remainder === 0n) return integer.toString();
-
-  const fracFull = remainder.toString().padStart(decimals, "0");
-  const intNum = Number(integer);
-  const maxFrac = intNum > 1e6 ? 2 : intNum > 1 ? 6 : decimals;
-  const frac = fracFull.slice(0, maxFrac).replace(/0+$/, "");
-
-  return frac ? `${integer}.${frac}` : integer.toString();
 }
 
 // ============================================================================
@@ -142,50 +195,50 @@ export async function getAccountSummary(userAddress: string, network = "mainnet"
     const supplyBalanceRaw = jTokenBalance * exchangeRateMantissa / BigInt(1e18);
 
     // Get price: try multicall result first, then API fallback
-    let priceUSD = 0;
+    let priceRaw = 0n;
     const priceRes = priceResults[i];
     if (priceRes.success) {
-      const priceRaw = BigInt(priceRes.result?.toString() ?? "0");
-      if (priceRaw > 0n && network === "mainnet") {
-        priceUSD = Number(priceRaw) / (10 ** (36 - info.underlyingDecimals));
+      const oraclePriceRaw = BigInt(priceRes.result?.toString() ?? "0");
+      if (oraclePriceRaw > 0n && network === "mainnet") {
+        priceRaw = oraclePriceRaw;
       }
     }
-    if (priceUSD === 0) {
-      priceUSD = await fetchPriceFromAPI(info.underlyingSymbol, info.underlyingDecimals, network) ?? 0;
+    if (priceRaw === 0n) {
+      const fallbackPrice = await fetchPriceFromAPI(info.underlyingSymbol, info.underlyingDecimals, network) ?? 0;
+      priceRaw = priceNumberToRaw(fallbackPrice, info.underlyingDecimals);
     }
 
-    const supplyBalanceHuman = Number(supplyBalanceRaw) / 10 ** info.underlyingDecimals;
-    const borrowBalanceHuman = Number(borrowBalance) / 10 ** info.underlyingDecimals;
+    const supplyValueCents = amountToUsdCents(supplyBalanceRaw, priceRaw);
+    const borrowValueCents = amountToUsdCents(borrowBalance, priceRaw);
 
     positions.push({
       jTokenAddress: info.address,
       symbol: info.symbol,
       underlyingSymbol: info.underlyingSymbol,
-      jTokenBalance: formatUnits(jTokenBalance, info.decimals),
-      supplyBalance: formatUnits(supplyBalanceRaw, info.underlyingDecimals),
-      borrowBalance: formatUnits(borrowBalance, info.underlyingDecimals),
+      jTokenBalance: formatDisplayUnits(jTokenBalance, info.decimals),
+      supplyBalance: formatDisplayUnits(supplyBalanceRaw, info.underlyingDecimals),
+      borrowBalance: formatDisplayUnits(borrowBalance, info.underlyingDecimals),
       isCollateral: collateralSet.has(info.address.toLowerCase()),
-      exchangeRate: (Number(exchangeRateMantissa) / 1e18).toFixed(10),
-      underlyingPriceUSD: priceUSD.toFixed(6),
-      supplyValueUSD: (supplyBalanceHuman * priceUSD).toFixed(2),
-      borrowValueUSD: (borrowBalanceHuman * priceUSD).toFixed(2),
+      exchangeRate: formatScaled(exchangeRateMantissa, 18, 10),
+      underlyingPriceUSD: formatScaled(priceRaw, USD_PRICE_SCALE - info.underlyingDecimals, 6),
+      supplyValueUSD: formatUsdCents(supplyValueCents),
+      borrowValueUSD: formatUsdCents(borrowValueCents),
     });
   }
 
-  const totalSupplyUSD = positions.reduce((sum, p) => sum + parseFloat(p.supplyValueUSD), 0);
-  const totalBorrowUSD = positions.reduce((sum, p) => sum + parseFloat(p.borrowValueUSD), 0);
+  const totalSupplyCents = positions.reduce((sum, p) => sum + utils.parseUnits(p.supplyValueUSD, 2), 0n);
+  const totalBorrowCents = positions.reduce((sum, p) => sum + utils.parseUnits(p.borrowValueUSD, 2), 0n);
 
-  const liquidityUSD = Number(liquidity) / MANTISSA;
-  const shortfallUSD = Number(shortfall) / MANTISSA;
+  const liquidityCents = divRound(liquidity * 100n, MANTISSA_18);
+  const shortfallCents = divRound(shortfall * 100n, MANTISSA_18);
 
   let healthFactor = "∞";
-  if (totalBorrowUSD > 0) {
-    if (shortfallUSD > 0) {
-      // 出现资不抵债缺口：(总借款 - 缺口) / 总借款
-      healthFactor = ((totalBorrowUSD - shortfallUSD) / totalBorrowUSD).toFixed(4);
+  if (totalBorrowCents > 0n) {
+    if (shortfallCents > 0n) {
+      const adjustedBorrowCents = totalBorrowCents > shortfallCents ? totalBorrowCents - shortfallCents : 0n;
+      healthFactor = formatRatio(adjustedBorrowCents, totalBorrowCents, 4);
     } else {
-      // 安全状态：(可用流动性 + 总借款) / 总借款
-      healthFactor = ((liquidityUSD + totalBorrowUSD) / totalBorrowUSD).toFixed(4);
+      healthFactor = formatRatio(liquidityCents + totalBorrowCents, totalBorrowCents, 4);
     }
   }
 
@@ -197,10 +250,10 @@ export async function getAccountSummary(userAddress: string, network = "mainnet"
     address: userAddress,
     network,
     positions,
-    totalSupplyUSD: totalSupplyUSD.toFixed(2),
-    totalBorrowUSD: totalBorrowUSD.toFixed(2),
-    liquidityUSD: liquidityUSD.toFixed(2),
-    shortfallUSD: shortfallUSD.toFixed(2),
+    totalSupplyUSD: formatUsdCents(totalSupplyCents),
+    totalBorrowUSD: formatUsdCents(totalBorrowCents),
+    liquidityUSD: formatUsdCents(liquidityCents),
+    shortfallUSD: formatUsdCents(shortfallCents),
     healthFactor,
     collateralMarkets: assetsIn, // 返回真实的 base58 抵押池地址列表
     blockNumber,
@@ -225,7 +278,7 @@ export async function checkAllowance(
   const token = tronWeb.contract(TRC20_ABI, info.underlying);
   const raw = await token.methods.allowance(userAddress, info.address).call();
   const allowance = BigInt(raw);
-  const formatted = formatUnits(allowance, info.underlyingDecimals);
+  const formatted = formatDisplayUnits(allowance, info.underlyingDecimals);
 
   return {
     allowance: formatted,
@@ -245,7 +298,7 @@ export async function checkAllowance(
 export async function getAccountTRXBalance(address: string, network = "mainnet"): Promise<string> {
   const tronWeb = getTronWeb(network);
   const balance = await tronWeb.trx.getBalance(address);
-  return (Number(balance) / 1e6).toFixed(6);
+  return formatDisplayUnits(BigInt(balance), 6);
 }
 
 /**
@@ -261,7 +314,7 @@ export async function getTokenBalance(address: string, tokenAddress: string, net
   ]);
   const dec = Number(decimals);
   return {
-    balance: formatUnits(BigInt(raw), dec),
+    balance: formatDisplayUnits(BigInt(raw), dec),
     symbol: String(symbol),
     decimals: dec,
   };
@@ -305,7 +358,7 @@ export async function getWalletTokensBalance(
       return tokens.map((token, i) => ({
         symbol: token.symbol,
         tokenAddress: token.address,
-        balance: errors[i] ? "0" : formatUnits(BigInt(rawBalances[i] ?? 0), token.decimals),
+        balance: errors[i] ? "0" : formatDisplayUnits(BigInt(rawBalances[i] ?? 0), token.decimals),
         decimals: token.decimals,
         error: errors[i] ? true : undefined,
       }));
@@ -328,7 +381,7 @@ export async function getWalletTokensBalance(
     return {
       symbol: token.symbol,
       tokenAddress: token.address,
-      balance: formatUnits(raw, token.decimals),
+      balance: formatDisplayUnits(raw, token.decimals),
       decimals: token.decimals,
       error: r.status === "rejected" || undefined,
     };
@@ -343,7 +396,7 @@ export async function getAccountDataFromAPI(address: string, network = "mainnet"
   const url = `${host}/justlend/account?addr=${encodeURIComponent(address)}`;
 
   try {
-    const response = await fetch(url);
+    const response = await fetchWithTimeout(url);
     if (!response.ok) {
       throw new Error(`API request failed: ${response.status} ${response.statusText}`);
     }

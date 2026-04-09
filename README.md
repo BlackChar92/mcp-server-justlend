@@ -195,10 +195,12 @@ The server communicates via stdin/stdout. This is the standard mode for local MC
 ### HTTP/SSE Mode (Remote / Multi-Client)
 
 ```bash
-npm run start:http
+MCP_API_KEY=my-secret-key npm run start:http
 ```
 
 The server starts an Express HTTP service with Server-Sent Events (SSE) transport. Suitable for **web applications**, **remote clients**, or scenarios where **multiple clients** need to connect concurrently.
+
+HTTP mode is fail-closed: `MCP_API_KEY` is required, the server binds to `127.0.0.1` by default, and CORS is disabled unless you explicitly set `MCP_CORS_ORIGIN`.
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -211,8 +213,9 @@ The server starts an Express HTTP service with Server-Sent Events (SSE) transpor
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | `3001` | HTTP listen port |
-| `MCP_API_KEY` | _(none)_ | Bearer token for authentication. If not set, the server runs **without auth** (not recommended for production) |
-| `MCP_CORS_ORIGIN` | `*` | Allowed CORS origins |
+| `MCP_HOST` | `127.0.0.1` | HTTP listen host. Keep the default unless you intentionally want remote exposure. |
+| `MCP_API_KEY` | _(required)_ | Bearer token for authentication. HTTP mode refuses to start without it. |
+| `MCP_CORS_ORIGIN` | _(disabled)_ | Allowed CORS origin. If unset, no CORS headers are sent. |
 | `MCP_MAX_SESSIONS` | `100` | Maximum concurrent SSE sessions |
 | `MCP_SESSION_TIMEOUT_MS` | `1800000` | Session idle timeout in ms (default: 30 min) |
 

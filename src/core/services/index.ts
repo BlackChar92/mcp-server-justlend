@@ -23,3 +23,4 @@ export * from "./transfer.js";
 export * from "./utils.js";
 export * from "./global.js";
 export * from "./cache.js";
+export * from "./http.js";

@@ -184,6 +184,43 @@ describe("getAccountSummary (multicall)", () => {
     expect(summary.network).toBe("mainnet");
   });
 
+  it("should preserve precision for large positions above MAX_SAFE_INTEGER", async () => {
+    mockGetAccountLiquidity.mockResolvedValueOnce({
+      0: 0,
+      1: "9007199254740993123456789000000000000",
+      2: "0",
+      err: 0,
+      liquidity: "9007199254740993123456789000000000000",
+      shortfall: "0",
+    });
+    mockMulticall.mockResolvedValueOnce([
+      {
+        success: true,
+        result: {
+          0: 0,
+          1: "900719925474099312345678901234",
+          2: "123456789",
+          3: "1000000000000000000",
+        },
+      },
+      { success: true, result: { 0: 0, 1: 0, 2: 0, 3: "200000000000000000" } },
+      { success: true, result: "1000000000000000000000000000000" },
+      { success: true, result: "0" },
+    ]);
+
+    const summary = await getAccountSummary("TTestUser123456789012345678901234", "mainnet");
+
+    expect(summary.positions).toHaveLength(1);
+    expect(summary.positions[0].supplyBalance).toBe("900719925474099312345678.9");
+    expect(summary.positions[0].borrowBalance).toBe("123.456789");
+    expect(summary.positions[0].supplyValueUSD).toBe("900719925474099312345678.90");
+    expect(summary.positions[0].borrowValueUSD).toBe("123.46");
+    expect(summary.totalSupplyUSD).toBe("900719925474099312345678.90");
+    expect(summary.totalBorrowUSD).toBe("123.46");
+    expect(summary.liquidityUSD).toBe("9007199254740993123.46");
+    expect(summary.healthFactor).toBe("72956417096557534.8041");
+  });
+
   it("should pass multicall calls with correct structure", async () => {
     mockMulticall.mockResolvedValueOnce([
       { success: true, result: { 0: 0, 1: 0, 2: 0, 3: "200000000000000000" } },

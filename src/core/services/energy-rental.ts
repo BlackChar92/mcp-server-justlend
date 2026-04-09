@@ -16,12 +16,11 @@ import { ENERGY_MARKET_ABI } from "../abis.js";
 import { safeSend } from "./contracts.js";
 import { waitForTransaction } from "./transactions.js";
 import { checkResourceSufficiency } from "./lending.js";
+import { fetchWithTimeout } from "./http.js";
 
 const TRX_PRECISION = 1e6;
 const TOKEN_PRECISION = 1e18;
 const DEFAULT_FEE_LIMIT = 200_000_000; // 200 TRX
-const FETCH_TIMEOUT_MS = 15_000;
-
 const TRON_ADDRESS_RE = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
 
 function validateTronAddress(address: string, label = "address"): string {
@@ -29,10 +28,6 @@ function validateTronAddress(address: string, label = "address"): string {
     throw new Error(`Invalid TRON ${label} format`);
   }
   return address;
-}
-
-function fetchWithTimeout(url: string): Promise<Response> {
-  return fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
 }
 
 // ============================================================================

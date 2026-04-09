@@ -7,6 +7,7 @@ import { getJustLendAddresses, getAllJTokens, getApiHost, type JTokenInfo } from
 import { JTOKEN_ABI, COMPTROLLER_ABI, PRICE_ORACLE_ABI } from "../abis.js";
 import { fetchPriceFromAPI } from "./price.js";
 import { cacheGet, cacheSet } from "./cache.js";
+import { fetchWithTimeout } from "./http.js";
 
 const BLOCKS_PER_YEAR = 10_512_000;
 const MARKETS_TTL_MS = 60_000; // 60s
@@ -154,7 +155,7 @@ export async function getMarketData(jTokenInfo: JTokenInfo, network = "mainnet")
  */
 async function getMarketDataFromAPIByToken(jTokenInfo: JTokenInfo, network = "mainnet"): Promise<MarketData> {
   const host = getApiHost(network);
-  const resp = await fetch(`${host}/justlend/markets`);
+  const resp = await fetchWithTimeout(`${host}/justlend/markets`);
   if (!resp.ok) throw new Error(`Markets API failed: ${resp.status}`);
   const json = await resp.json();
   if (json.code !== 0 || !json.data?.jtokenList) throw new Error("Invalid API response");
@@ -269,7 +270,7 @@ export async function getMarketDataFromAPI(network = "mainnet"): Promise<any> {
   const url = `${host}/justlend/markets`;
 
   try {
-    const response = await fetch(url);
+    const response = await fetchWithTimeout(url);
     if (!response.ok) {
       throw new Error(`API request failed: ${response.status} ${response.statusText}`);
     }
@@ -292,7 +293,7 @@ async function getJTokenDetailFromAPI(jtokenAddr: string, network = "mainnet"): 
   const host = getApiHost(network);
   const url = `${host}/justlend/markets/jtokenDetails?jtokenAddr=${encodeURIComponent(jtokenAddr)}`;
   try {
-    const response = await fetch(url);
+    const response = await fetchWithTimeout(url);
     if (!response.ok) return null;
     const data = await response.json();
     return data.code === 0 ? data.data : null;
@@ -341,7 +342,7 @@ export async function getAllMarketOverview(network = "mainnet"): Promise<MarketO
   const host = getApiHost(network);
 
   // Fetch markets list
-  const marketsResp = await fetch(`${host}/justlend/markets`);
+  const marketsResp = await fetchWithTimeout(`${host}/justlend/markets`);
   if (!marketsResp.ok) throw new Error(`Markets API failed: ${marketsResp.status}`);
   const marketsData = await marketsResp.json();
   if (marketsData.code !== 0) throw new Error(`Markets API error: ${marketsData.code}`);
@@ -450,7 +451,7 @@ export async function getMarketDashboardFromAPI(network = "mainnet"): Promise<an
   const url = `${host}/justlend/markets/dashboard`;
 
   try {
-    const response = await fetch(url);
+    const response = await fetchWithTimeout(url);
     if (!response.ok) {
       throw new Error(`API request failed: ${response.status} ${response.statusText}`);
     }
@@ -477,7 +478,7 @@ export async function getJTokenDetailsFromAPI(jtokenAddr: string, network = "mai
   const url = `${host}/justlend/markets/jtokenDetails?jtokenAddr=${encodeURIComponent(jtokenAddr)}`;
 
   try {
-    const response = await fetch(url);
+    const response = await fetchWithTimeout(url);
     if (!response.ok) {
       throw new Error(`API request failed: ${response.status} ${response.statusText}`);
     }

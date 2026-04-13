@@ -12,7 +12,7 @@ import { homedir } from "os";
 import { join } from "path";
 import { TronWeb } from "tronweb";
 import { getNetworkConfig } from "../chains.js";
-import { getSessionState, getWalletMode, type SessionState } from "./global.js";
+import { getGlobalNetwork, getSessionState, getWalletMode, type SessionState } from "./global.js";
 import { TronWalletSigner } from "../browser-signer.js";
 
 export interface ConfiguredWallet {
@@ -301,10 +301,14 @@ export async function getSigningClient(network = "mainnet"): Promise<TronWeb> {
  * Sign a transaction and return the signed transaction object ready for broadcasting.
  * Routes to browser wallet or agent-wallet based on the current wallet mode.
  */
-export async function signTransactionWithWallet(unsignedTx: any, description?: string): Promise<any> {
+export async function signTransactionWithWallet(
+  unsignedTx: any,
+  description?: string,
+  network = getGlobalNetwork(),
+): Promise<any> {
   if (getWalletMode() === "browser") {
     const signer = getBrowserSigner();
-    const { signedTransaction } = await signer.signTransaction(unsignedTx, description);
+    const { signedTransaction } = await signer.signTransaction(unsignedTx, description, network);
     // Ensure the signature array is on the original tx structure
     if (signedTransaction && signedTransaction.signature) {
       return { ...unsignedTx, signature: signedTransaction.signature };
@@ -342,7 +346,10 @@ export async function signTransactionWithWallet(unsignedTx: any, description?: s
 export async function signMessage(message: string): Promise<string> {
   if (getWalletMode() === "browser") {
     const signer = getBrowserSigner();
-    const { signature } = await signer.signMessage({ message });
+    const { signature } = await signer.signMessage({
+      message,
+      network: getGlobalNetwork(),
+    });
     return signature;
   }
 
@@ -362,7 +369,10 @@ export async function signTypedData(
 ): Promise<string> {
   if (getWalletMode() === "browser") {
     const signer = getBrowserSigner();
-    const { signature } = await signer.signTypedData({ domain, types, message: value });
+    const { signature } = await signer.signTypedData(
+      { domain, types, message: value },
+      getGlobalNetwork(),
+    );
     return signature;
   }
 

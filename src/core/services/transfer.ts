@@ -39,7 +39,7 @@ export async function transferTRX(
 
   // Build unsigned transaction, sign with agent-wallet, then broadcast
   const unsignedTx = await tronWeb.transactionBuilder.sendTrx(to, Number(amountSun), walletAddress);
-  const signedTx = await signTransactionWithWallet(unsignedTx);
+  const signedTx = await signTransactionWithWallet(unsignedTx, undefined, network);
   const broadcast = await tronWeb.trx.sendRawTransaction(signedTx);
 
   if ((broadcast as any).result) {

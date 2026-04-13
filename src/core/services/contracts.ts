@@ -82,7 +82,7 @@ export async function writeContract(
       ownerAddress,
     );
 
-    const signed = await signTransactionWithWallet(tx.transaction);
+    const signed = await signTransactionWithWallet(tx.transaction, undefined, network);
     const broadcast = await tronWeb.trx.sendRawTransaction(signed);
 
     if (broadcast.result) {
@@ -256,7 +256,7 @@ export async function safeSend(
       ownerAddress
     );
 
-    const signed = await signTransactionWithWallet(tx.transaction);
+    const signed = await signTransactionWithWallet(tx.transaction, undefined, network);
     const broadcast = await tronWeb.trx.sendRawTransaction(signed);
 
     if (broadcast.result) {
@@ -508,7 +508,7 @@ export async function deployContract(
       deploymentOptions,
       tronWeb.defaultAddress.hex as string,
     );
-    const signedTx = await signTransactionWithWallet(transaction);
+    const signedTx = await signTransactionWithWallet(transaction, undefined, network);
     const result = await tronWeb.trx.sendRawTransaction(signedTx);
 
     if (result && result.result) {

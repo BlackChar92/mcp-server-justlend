@@ -13,7 +13,7 @@ Beyond JustLend-specific operations, the server also exposes a full set of **gen
 
 ## Overview
 
-[JustLend DAO](https://justlend.org) is the largest lending protocol on TRON, based on the Compound V2 architecture. This MCP server wraps the full protocol functionality into tools and guided prompts that AI agents (Claude Desktop, Cursor, etc.) can use.
+[JustLend DAO](https://justlend.org) is the largest lending protocol on TRON, based on the Compound V2 architecture. This MCP server wraps the full protocol functionality into tools and guided prompts that local MCP clients such as Claude Desktop, Codex, Claude Code, and Cursor can use.
 
 **📌 Current Version: JustLend V1**
 
@@ -83,14 +83,14 @@ npm install
 
 ## Quick Setup
 
-For a guided setup experience (build, configure, generate `.mcp.json`):
+For a guided setup experience (build, configure, generate `.mcp.json`, print Codex setup command):
 
 ```bash
 bash scripts/setup-mcp-test.sh
-# Add --claude-desktop to also output Claude Desktop config
+# Add --claude-desktop to also print Claude Desktop JSON
 ```
 
-The script checks Node.js 20+, installs dependencies, builds the project, and generates the MCP client configuration.
+The script checks Node.js 20+, installs dependencies, builds the project, generates local Claude Code config, and prints the local Codex registration command.
 
 ## Configuration
 
@@ -147,6 +147,18 @@ export TRONGRID_API_KEY="your_trongrid_api_key"
 
 ### Client Configuration
 
+Build the local server first:
+
+```bash
+npm run build
+```
+
+All local client examples below use the built stdio entrypoint:
+
+```bash
+node /absolute/path/to/mcp-server-justlend/build/index.js
+```
+
 #### Claude Desktop
 
 Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
@@ -154,10 +166,50 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "mcp-server-justlend": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["tsx", "@justlend/mcp-server-justlend"],
+    "justlend": {
+      "command": "node",
+      "args": ["/absolute/path/to/mcp-server-justlend/build/index.js"],
+      "env": {
+        "TRONGRID_API_KEY": "SET_VIA_SYSTEM_ENV"
+      }
+    }
+  }
+}
+```
+
+#### Codex
+
+Recommended: register the local stdio server with `codex mcp add`:
+
+```bash
+codex mcp add justlend --env TRONGRID_API_KEY=your_trongrid_api_key -- \
+  node /absolute/path/to/mcp-server-justlend/build/index.js
+```
+
+If you do not want to set a TronGrid key yet, omit the `--env` flag:
+
+```bash
+codex mcp add justlend -- node /absolute/path/to/mcp-server-justlend/build/index.js
+```
+
+Useful maintenance commands:
+
+```bash
+codex mcp list
+codex mcp get justlend
+codex mcp remove justlend
+```
+
+#### Claude Code
+
+Add to `.mcp.json` in the project root:
+
+```json
+{
+  "mcpServers": {
+    "justlend": {
+      "command": "node",
+      "args": ["/absolute/path/to/mcp-server-justlend/build/index.js"],
       "env": {
         "TRONGRID_API_KEY": "SET_VIA_SYSTEM_ENV"
       }
@@ -173,10 +225,9 @@ Add to `.cursor/mcp.json`:
 ```json
 {
   "mcpServers": {
-    "mcp-server-justlend": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["tsx", "@justlend/mcp-server-justlend"],
+    "justlend": {
+      "command": "node",
+      "args": ["/absolute/path/to/mcp-server-justlend/build/index.js"],
       "env": {
         "TRONGRID_API_KEY": "SET_VIA_SYSTEM_ENV"
       }
@@ -195,7 +246,7 @@ The server supports two transport modes. Both share the same Tools, Resources, a
 npm start
 ```
 
-The server communicates via stdin/stdout. This is the standard mode for local MCP clients like **Claude Desktop**, **Cursor**, and **Claude Code**, which launch the server as a child process. Single client, no extra configuration needed.
+The server communicates via stdin/stdout. This is the standard mode for local MCP clients like **Claude Desktop**, **Codex**, **Claude Code**, and **Cursor**, which launch the server as a child process.
 
 ### HTTP/SSE Mode (Remote / Multi-Client)
 
@@ -244,7 +295,7 @@ npm run dev:http     # HTTP/SSE with auto-reload
 
 ## API Reference
 
-### Tools (60 total)
+### Tools (59 total)
 
 #### Wallet & Network
 | Tool | Description | Write? |
@@ -362,7 +413,7 @@ mcp-server-justlend/
 │   ├── core/
 │   │   ├── chains.ts          # Network configs + JustLend contract addresses
 │   │   ├── abis.ts            # jToken, Comptroller, Oracle, TRC20 ABIs
-│   │   ├── tools.ts           # MCP tool registrations (60 tools)
+│   │   ├── tools.ts           # MCP tool registrations (59 tools)
 │   │   ├── prompts.ts         # AI-guided workflow prompts
 │   │   ├── resources.ts       # Static protocol info resource
 │   │   ├── browser-signer/    # Browser wallet signing via localhost HTTP bridge

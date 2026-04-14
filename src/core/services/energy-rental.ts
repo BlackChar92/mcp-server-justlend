@@ -849,8 +849,12 @@ export async function rentEnergy(
   }
 
   const addrs = getJustLendAddresses(network);
-  const stakeAmountSun = BigInt(Math.floor(priceEstimate.trxAmount * TRX_PRECISION));
-  const prepaymentSun = BigInt(Math.ceil(priceEstimate.totalPrepayment * TRX_PRECISION));
+  // Convert TRX floats to SUN BigInt safely: round to 6 decimal places first
+  // to eliminate floating-point artifacts before casting to BigInt.
+  // trxAmount is already an integer from Math.ceil(), but we round defensively.
+  // prepaymentSun uses Math.ceil to ensure we never underpay the contract.
+  const stakeAmountSun = BigInt(Math.round(priceEstimate.trxAmount * TRX_PRECISION));
+  const prepaymentSun = BigInt(Math.ceil(Math.round(priceEstimate.totalPrepayment * TRX_PRECISION * 10) / 10));
 
   const { txID: txId } = await safeSend({
     address: addrs.strx.market,

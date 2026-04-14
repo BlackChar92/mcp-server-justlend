@@ -259,18 +259,16 @@ export async function unstakeStrx(
   const walletAddress = tronWeb.defaultAddress.base58 as string;
   const addrs = getJustLendAddresses(network);
 
-  // Check sTRX balance
+  // Check sTRX balance (compare in BigInt to avoid precision loss for large holdings)
   const strxBalance = await getStrxBalance(walletAddress, network);
-  const balanceNum = Number(strxBalance.raw) / TOKEN_PRECISION;
+  const amountWeiStr = tronWeb.toBigNumber(amountStrx).times(TOKEN_PRECISION).integerValue().toString(10);
+  const amountWei = BigInt(amountWeiStr);
 
-  if (tronWeb.toBigNumber(balanceNum).lt(amountStrx)) {
+  if (strxBalance.raw < amountWei) {
     throw new Error(
       `Insufficient sTRX balance for unstaking. Need ${amountStrx} sTRX`,
     );
   }
-
-  const amountWeiStr = tronWeb.toBigNumber(amountStrx).times(TOKEN_PRECISION).integerValue().toString(10);
-  const amountWei = BigInt(amountWeiStr);
   const contract = tronWeb.contract(STRX_ABI, addrs.strx.proxy);
 
   const { txID: txId } = await safeSend({

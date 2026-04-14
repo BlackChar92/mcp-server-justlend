@@ -24,22 +24,22 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@bankofai/agent-wallet": "^2.3.0",
-    "@modelcontextprotocol/sdk": "^1.22.0",
-    "cors": "^2.8.6",
-    "express": "^4.21.2",
-    "open": "^11.0.0",
-    "tronlink-signer": "^0.1.1",
-    "tronweb": "^6.1.1",
-    "zod": "^3.24.3"
+    "@bankofai/agent-wallet": "2.3.0",
+    "@modelcontextprotocol/sdk": "1.27.1",
+    "cors": "2.8.6",
+    "express": "4.22.1",
+    "open": "11.0.0",
+    "tronlink-signer": "0.1.1",
+    "tronweb": "6.2.2",
+    "zod": "3.25.76"
   },
   "devDependencies": {
-    "@types/cors": "^2.8.19",
-    "@types/express": "^5.0.0",
-    "@types/node": "^22.19.7",
-    "tsx": "^4.21.0",
-    "typescript": "^5.9.3",
-    "vitest": "^4.0.17"
+    "@types/cors": "2.8.19",
+    "@types/express": "5.0.6",
+    "@types/node": "22.19.15",
+    "tsx": "4.21.0",
+    "typescript": "5.9.3",
+    "vitest": "4.1.0"
   },
   "overrides": {
     "axios": "1.15.0"

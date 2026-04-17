@@ -13,6 +13,10 @@ export * from "./strx-staking.js";
 // JustLend V2 (Moolah) services
 export * from "./moolah-query.js";
 export * from "./moolah-backend.js";
+export * from "./moolah-vault.js";
+export * from "./moolah-market.js";
+export * from "./moolah-liquidation.js";
+export * from "./moolah-dashboard.js";
 
 // General TRON chain services
 export * from "./address.js";

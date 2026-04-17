@@ -32,9 +32,9 @@ export interface NetworkConfig {
  */
 export interface JustLendAddresses {
   comptroller: string; // Unitroller (proxy for Comptroller)
-  priceOracle: string; // Price oracle used by Comptroller
-  lens: string; // CompoundLens helper (batch reads)
-  maximillion: string; // Helper for repaying TRX borrows
+  priceOracle: string; // Price oracle used by Comptroller — may be empty on networks where the live oracle is fetched dynamically via comptroller.oracle()
+  lens?: string; // CompoundLens helper (batch reads) — not deployed on all networks
+  maximillion?: string; // Helper for repaying TRX borrows — not deployed on all networks
   governorAlpha: string; // Governance contract
   jst: string; // JST token address
   wjst: string; // Wrapped JST for governance
@@ -352,9 +352,8 @@ export const JUSTLEND_ADDRESSES: Record<TronNetwork, JustLendAddresses> = {
   },
   [TronNetwork.Nile]: {
     comptroller: "TJUCStq3WqfKqZLuZje5v7z6Ua6iBry1P6",
-    priceOracle: "TTestPriceOracleNileXXXXXXXXXXXXXX",
-    lens: "TTestLensNileXXXXXXXXXXXXXXXXXXXXX",
-    maximillion: "TTestMaximillionNileXXXXXXXXXXXXXX",
+    priceOracle: "", // Resolved dynamically via comptroller.oracle() in account.ts; no static address on nile
+    // lens and maximillion: not deployed on nile; consumers must treat these fields as optional
     governorAlpha: "TYCNENqt2oJK7eiwubi6YXXt8RHR1BnzBs",
     jst: "TJqk3ChKSjmpoNm3gaqSEatNsueD37NGDK",
     wjst: "TCxA1eNhsAV3gvUwLjLtREW9f775V4h1h7",
@@ -708,19 +707,24 @@ export function getApiHost(network: string = DEFAULT_NETWORK): string {
 // ── Moolah V2 helpers ─────────────────────────────────────────────────────────
 
 /**
- * Moolah V2 backend API host per network.
- * NOTE: nile URL is unconfirmed — may share mainnet host or have a staging endpoint.
+ * Moolah V2 backend API host.
+ *
+ * Only mainnet is supported: the V2 REST backend does not index nile data
+ * (requests with nile addresses return all-null payloads), so exposing a
+ * nile URL would be misleading. Callers that want nile data must go through
+ * the on-chain reads in `moolah-query.ts` instead.
  */
 const MOOLAH_API_HOSTS: Record<string, string> = {
   mainnet: "https://zenvora.ablesdxd.link",
-  nile:    "https://zenvora.ablesdxd.link",  // TODO: confirm nile staging URL
 };
 
 export function getMoolahApiHost(network: string = DEFAULT_NETWORK): string {
   const n = network.toLowerCase();
   if (n === "mainnet" || n === "tron" || n === "trx") return MOOLAH_API_HOSTS.mainnet;
-  if (n === "nile" || n === "testnet") return MOOLAH_API_HOSTS.nile;
-  return MOOLAH_API_HOSTS.mainnet;
+  throw new Error(
+    `Moolah V2 REST backend is only available on mainnet (got "${network}"). ` +
+    `Use the on-chain reads in moolah-query.ts for other networks.`,
+  );
 }
 
 /**

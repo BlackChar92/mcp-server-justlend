@@ -45,7 +45,7 @@ export function registerMarketTools(server: McpServer) {
             type: "text",
             text: JSON.stringify({
               comptroller: addresses.comptroller,
-              oracle: addresses.priceOracle,
+              ...(addresses.priceOracle ? { oracle: addresses.priceOracle } : {}),
               markets: tokens.map((t) => ({
                 symbol: t.symbol,
                 underlyingSymbol: t.underlyingSymbol,

@@ -71,6 +71,10 @@ describe("Moolah V2 config", () => {
       const host = getMoolahApiHost("mainnet");
       expect(host).toMatch(/^https:\/\//);
     });
+
+    it("throws for nile — V2 REST backend is mainnet-only", () => {
+      expect(() => getMoolahApiHost("nile")).toThrow(/mainnet/);
+    });
   });
 
   describe("getMoolahAddresses (nile)", () => {

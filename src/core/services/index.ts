@@ -17,6 +17,7 @@ export * from "./moolah-vault.js";
 export * from "./moolah-market.js";
 export * from "./moolah-liquidation.js";
 export * from "./moolah-dashboard.js";
+export * from "./moolah-estimate.js";
 
 // General TRON chain services
 export * from "./address.js";

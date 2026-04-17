@@ -124,6 +124,38 @@ export function registerMoolahDashboardTools(server: McpServer) {
   );
 
   server.registerTool(
+    "estimate_moolah_energy",
+    {
+      description:
+        "Estimate energy, bandwidth, and TRX cost for a JustLend V2 (Moolah) write operation BEFORE executing it. " +
+        "Returns historical typical values (on-chain simulation for Moolah's tuple-args ops is not yet wired). " +
+        "Set isTRX=true when the underlying / loan / collateral token is native TRX (TrxProviderProxy route). " +
+        "Covers: vault_deposit, vault_withdraw, vault_redeem, approve_vault, supply_collateral, withdraw_collateral, " +
+        "borrow, repay, approve_proxy, liquidate, approve_liquidator.",
+      inputSchema: {
+        operation: z.enum([
+          "vault_deposit", "vault_withdraw", "vault_redeem", "approve_vault",
+          "supply_collateral", "withdraw_collateral", "borrow", "repay", "approve_proxy",
+          "liquidate", "approve_liquidator",
+        ]).describe("Moolah operation to estimate"),
+        isTRX: z.boolean().optional().describe("Whether the route uses native TRX (via TrxProviderProxy). Default: false"),
+        address: z.string().optional().describe("Owner address for resource-sufficiency check. Default: configured wallet"),
+        network: z.string().optional().describe("Network. Default: mainnet"),
+      },
+      annotations: { title: "Estimate Moolah Energy", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ operation, isTRX = false, address, network = services.getGlobalNetwork() }) => {
+      try {
+        const owner = address || await services.getWalletAddress().catch(() => undefined);
+        const res = await services.estimateMoolahEnergy({ operation, isTRX, ownerAddress: owner, network });
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      } catch (error: any) {
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+      }
+    },
+  );
+
+  server.registerTool(
     "get_moolah_market_history",
     {
       description:

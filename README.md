@@ -50,8 +50,8 @@ Beyond JustLend-specific operations, the server also exposes a full set of **gen
 #### Historical records (New in v1.1.0)
 - Paginated REST wrappers for V1 lending / sTRX / voting / energy-rental / liquidation history, plus V2 Moolah records. Each endpoint's numeric action/op codes are enriched with human-readable names (`actionName` / `opName`) client-side so MCP tools are self-describing.
 
-#### Browser Wallet Signing (New in v1.0.3)
-- **TronLink Integration**: Connect TronLink or other browser wallets via localhost HTTP bridge
+#### Browser Wallet Signing
+- **TronLink Integration**: Connect TronLink (and other TIP-6963 browser wallets) via the `tronlink-signer` SDK
 - **Sign-only mode**: Server builds transactions, browser only signs — private keys never leave the wallet
 - **Dual wallet mode**: Users choose between `browser` (recommended) or `agent` (encrypted local storage)
 

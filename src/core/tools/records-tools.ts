@@ -118,6 +118,45 @@ export function registerRecordsTools(server: McpServer) {
   );
 
   server.registerTool(
+    "get_claimable_rewards",
+    {
+      description:
+        "Scan all JustLend merkle airdrop distributors for a user's unclaimed rewards. Returns a map keyed by " +
+        "merkle distributor index; each entry includes the token symbol, address, and amount. " +
+        "Read-only — actually claiming requires per-distributor merkle proofs passed to multiClaim() on-chain " +
+        "(write path deferred until the proof fields are confirmed against a live address with rewards). " +
+        "Mainnet-only.",
+      inputSchema: {
+        address: z.string().describe("TRON address. Default: configured wallet"),
+        network: z.string().optional().describe("Must be 'mainnet'. Default: mainnet"),
+      },
+      annotations: { title: "Get Claimable Rewards", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ address, network = services.getGlobalNetwork() }) => {
+      try {
+        const userAddr = address || await services.getWalletAddress();
+        const res = await services.fetchClaimableRewards(userAddr, network);
+        const count = Object.keys(res.merkleRewards ?? {}).length;
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              address: userAddr,
+              distributorCount: count,
+              rewards: res.merkleRewards,
+              note: count === 0
+                ? "No claimable rewards found for this address."
+                : "Use the returned amounts/proofs to build multiClaim() calls against the appropriate distributors.",
+            }, null, 2),
+          }],
+        };
+      } catch (error: any) {
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+      }
+    },
+  );
+
+  server.registerTool(
     "get_liquidation_records",
     {
       description:

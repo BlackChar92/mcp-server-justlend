@@ -99,4 +99,50 @@ export function registerMoolahDashboardTools(server: McpServer) {
       }
     },
   );
+
+  server.registerTool(
+    "get_moolah_vault_history",
+    {
+      description:
+        "Time series of a V2 Moolah vault's APY, TVL, and supply mining data. " +
+        "Returns currentSupplyUsd, supplyBaseApy, supplyMiningApy, and a historyRecords array. " +
+        "Use vaultAddress from get_moolah_vaults or chains.ts vault map.",
+      inputSchema: {
+        vaultAddress: z.string().describe("Vault contract address (Base58 T...)"),
+        network: z.string().optional().describe("Network. Default: mainnet"),
+      },
+      annotations: { title: "Get Moolah Vault History", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ vaultAddress, network = services.getGlobalNetwork() }) => {
+      try {
+        const res = await services.fetchMoolahVaultApyHistory(vaultAddress, network);
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      } catch (error: any) {
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+      }
+    },
+  );
+
+  server.registerTool(
+    "get_moolah_market_history",
+    {
+      description:
+        "Time series of a V2 Moolah market's borrow/supply APY, utilization, and totals. " +
+        "Returns current totalBorrow/totalCollateral + borrowApy/supplyApy + list[] of historical points. " +
+        "Use marketId (bytes32 hex) from get_moolah_markets.",
+      inputSchema: {
+        marketId: z.string().describe("Market ID (bytes32 hex, e.g. '0xabc...')"),
+        network: z.string().optional().describe("Network. Default: mainnet"),
+      },
+      annotations: { title: "Get Moolah Market History", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ marketId, network = services.getGlobalNetwork() }) => {
+      try {
+        const res = await services.fetchMoolahMarketApyHistory(marketId, network);
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      } catch (error: any) {
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+      }
+    },
+  );
 }

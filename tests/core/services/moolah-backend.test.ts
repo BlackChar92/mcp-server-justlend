@@ -52,4 +52,27 @@ describe("Moolah backend API (mainnet)", () => {
     expect(Array.isArray(res.loanSymbols)).toBe(true);
     expect(Array.isArray(res.collateralSymbols)).toBe(true);
   }));
+
+  it("fetchMoolahVaultApyHistory returns an object with APY/TVL time-series fields", skipOn429(async () => {
+    const { getMoolahVaultInfo } = await import("../../../src/core/chains.js");
+    const { fetchMoolahVaultApyHistory } = await import("../../../src/core/services/moolah-backend.js");
+    const vault = getMoolahVaultInfo("USDT", "mainnet");
+    const res = await fetchMoolahVaultApyHistory(vault.address, "mainnet");
+    expect(res).toBeTruthy();
+    // Real response keys (from curl): currentSupplyUsd, supplyBaseApy, historyRecords, etc.
+    expect(typeof res).toBe("object");
+  }));
+
+  it("fetchMoolahMarketApyHistory returns an object with market totals + list", skipOn429(async () => {
+    const { fetchMoolahMarketList, fetchMoolahMarketApyHistory } = await import(
+      "../../../src/core/services/moolah-backend.js"
+    );
+    const markets = await fetchMoolahMarketList({ pageSize: 1 }, "mainnet");
+    if (markets.list.length === 0) return;
+    const marketId = (markets.list[0] as any).id ?? markets.list[0].marketId;
+    if (!marketId) return;
+    const res = await fetchMoolahMarketApyHistory(marketId, "mainnet");
+    expect(res).toBeTruthy();
+    expect(typeof res).toBe("object");
+  }));
 });

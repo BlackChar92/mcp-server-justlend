@@ -66,6 +66,18 @@ describe("V1 records service (mainnet-only)", () => {
     expect(typeof res.totalCount).toBe("number");
   }));
 
+  it("fetchClaimableRewards returns a merkleRewards map (empty for contract addr is fine)", skipOn429(async () => {
+    const { fetchClaimableRewards } = await import("../../../src/core/services/records.js");
+    const res = await fetchClaimableRewards(PROBE_ADDR, "mainnet");
+    expect(res).toHaveProperty("merkleRewards");
+    expect(typeof res.merkleRewards).toBe("object");
+  }));
+
+  it("fetchClaimableRewards rejects nile network", async () => {
+    const { fetchClaimableRewards } = await import("../../../src/core/services/records.js");
+    await expect(fetchClaimableRewards(PROBE_ADDR, "nile")).rejects.toThrow(/only available on mainnet/i);
+  });
+
   it("rejects nile network with a clear error", async () => {
     await expect(fetchLendingRecords(PROBE_ADDR, 1, 2, "nile")).rejects.toThrow(/only available on mainnet/i);
     await expect(fetchStrxRecords(PROBE_ADDR, 1, 2, "nile")).rejects.toThrow(/only available on mainnet/i);

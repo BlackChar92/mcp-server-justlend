@@ -73,4 +73,30 @@ export function registerMoolahDashboardTools(server: McpServer) {
       }
     },
   );
+
+  server.registerTool(
+    "get_moolah_records",
+    {
+      description:
+        "Get a user's paginated V2 (Moolah) transaction history — supply, withdraw, borrow, repay, liquidate events. " +
+        "Distinct from get_moolah_history (which returns position curves + a small recent-txs preview) — this one is the " +
+        "full paginated record list. Works on both mainnet and nile.",
+      inputSchema: {
+        address: z.string().optional().describe("User address. Default: configured wallet"),
+        pageNo: z.number().optional().describe("Page number, 1-indexed. Default: 1"),
+        pageSize: z.number().optional().describe("Records per page. Default: 20"),
+        network: z.string().optional().describe("Network. Default: mainnet"),
+      },
+      annotations: { title: "Get Moolah Records", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ address, pageNo = 1, pageSize = 20, network = services.getGlobalNetwork() }) => {
+      try {
+        const userAddr = address || await services.getWalletAddress();
+        const res = await services.fetchMoolahUserRecords(userAddr, { pageNo, pageSize }, network);
+        return { content: [{ type: "text", text: JSON.stringify({ address: userAddr, ...res }, null, 2) }] };
+      } catch (error: any) {
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+      }
+    },
+  );
 }

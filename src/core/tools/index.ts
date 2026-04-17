@@ -9,6 +9,7 @@ import { registerMoolahVaultTools } from "./moolah-vault-tools.js";
 import { registerMoolahMarketTools } from "./moolah-market-tools.js";
 import { registerMoolahLiquidationTools } from "./moolah-liquidation-tools.js";
 import { registerMoolahDashboardTools } from "./moolah-dashboard-tools.js";
+import { registerRecordsTools } from "./records-tools.js";
 
 /**
  * Register all JustLend MCP tools.
@@ -28,4 +29,6 @@ export function registerJustLendTools(server: McpServer) {
   registerMoolahMarketTools(server);
   registerMoolahLiquidationTools(server);
   registerMoolahDashboardTools(server);
+  // Historical records (V1 + cross-cutting)
+  registerRecordsTools(server);
 }

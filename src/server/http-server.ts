@@ -6,6 +6,7 @@ import startServer from "./server.js";
 import { createSessionState, runWithSessionState, type SessionState } from "../core/services/global.js";
 import { shutdownBrowserSignerForSession } from "../core/services/wallet.js";
 import { SERVER_VERSION } from "./version.js";
+import { authHeaderMatches } from "./auth.js";
 
 const PORT = parseInt(process.env.PORT || "3001", 10);
 const HOST = process.env.MCP_HOST || "127.0.0.1";
@@ -43,11 +44,11 @@ async function main() {
   // H-3: Body size limit
   app.use(express.json({ limit: "1mb" }));
 
-  // H-1: API key authentication
+  // H-1: API key authentication (constant-time comparison)
+  const expectedAuth = `Bearer ${API_KEY}`;
   app.use((req, res, next) => {
     if (req.path === "/health") return next();
-    const auth = req.headers.authorization;
-    if (auth !== `Bearer ${API_KEY}`) {
+    if (!authHeaderMatches(req.headers.authorization, expectedAuth)) {
       res.status(401).json({ error: "Unauthorized" });
       return;
     }

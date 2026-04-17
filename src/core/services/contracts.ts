@@ -6,6 +6,27 @@ import { waitForTransaction } from "./transactions.js";
 import { utils } from "./utils.js";
 
 /**
+ * Convert a callValue (sun) into the Number that TronWeb's triggerSmartContract
+ * requires, rejecting values past Number.MAX_SAFE_INTEGER (≈9.007e15 sun, ~9B TRX)
+ * where the JS Number cast would silently truncate. Mirrors the guard in
+ * transfer.ts:34-38 so every payable broadcast path has the same protection.
+ * Exported for direct testing.
+ */
+export function callValueToSafeNumber(callValue: string | number | bigint): number {
+  const big = typeof callValue === "bigint" ? callValue : BigInt(callValue);
+  if (big < 0n) {
+    throw new Error("callValue cannot be negative");
+  }
+  if (big > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error(
+      `callValue exceeds the safe SDK limit. Amount in Sun must be <= ${Number.MAX_SAFE_INTEGER} ` +
+      `(got ${big.toString()}).`,
+    );
+  }
+  return Number(big);
+}
+
+/**
  * Read from a smart contract (view/pure functions).
  */
 export async function readContract(
@@ -72,7 +93,7 @@ export async function writeContract(
     }));
 
     const options: any = {};
-    if (params.value) options.callValue = Number(params.value);
+    if (params.value) options.callValue = callValueToSafeNumber(params.value);
 
     const tx = await tronWeb.transactionBuilder.triggerSmartContract(
       params.address,
@@ -246,7 +267,7 @@ export async function safeSend(
     const options: any = {
       feeLimit: params.feeLimit || 1_000_000_000,
     };
-    if (params.callValue) options.callValue = Number(params.callValue);
+    if (params.callValue) options.callValue = callValueToSafeNumber(params.callValue);
 
     const tx = await tronWeb.transactionBuilder.triggerSmartContract(
       params.address,
@@ -587,7 +608,7 @@ export async function estimateEnergy(
         const result = await tronWeb.transactionBuilder.triggerConstantContract(
           params.address,
           signature,
-          { callValue: Number(params.callValue) },
+          { callValue: callValueToSafeNumber(params.callValue) },
           [],
           ownerAddress,
         );
@@ -657,7 +678,7 @@ export async function estimateEnergy(
     const result = await tronWeb.transactionBuilder.triggerConstantContract(
       params.address,
       signature,
-      params.callValue ? { callValue: Number(params.callValue) } : {},
+      params.callValue ? { callValue: callValueToSafeNumber(params.callValue) } : {},
       typedParams,
       ownerAddress,
     );

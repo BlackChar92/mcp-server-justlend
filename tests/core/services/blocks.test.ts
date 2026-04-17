@@ -32,14 +32,14 @@ describe("getChainId", () => {
 });
 
 describe("getLatestBlock (Mainnet)", () => {
-  it("should return a block with a valid header", async () => {
+  it("should return a block with a valid header", skipOn429(async () => {
     const block = await getLatestBlock("mainnet");
     expect(block).toBeDefined();
     expect(block.block_header).toBeDefined();
     expect(block.block_header.raw_data).toBeDefined();
     expect(typeof block.block_header.raw_data.number).toBe("number");
     console.error(`Latest block: #${block.block_header.raw_data.number}`);
-  }, 20_000);
+  }), 20_000);
 });
 
 describe("getBlockNumber (Mainnet)", () => {

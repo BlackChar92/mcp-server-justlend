@@ -2,26 +2,54 @@ import { describe, it, expect } from "vitest";
 import {
   fetchMoolahVaultList,
   fetchMoolahMarketList,
+  fetchMoolahLiquidationTokenList,
 } from "../../../src/core/services/moolah-backend.js";
 import { skipOn429 } from "../../helpers.js";
 
-// Mainnet backend reachability tests.
+// Mainnet read-only tests validating real API shapes sourced from
+// front-app/src/service/V2backend.js and stores/JLv2/*.
+// Each fetch* function flattens nested envelopes to { list, total, ... }.
 //
-// TODO: the actual Moolah API envelope for list endpoints is nested
-// (e.g. /index/vault/list returns { code, data: { allVaults: { totalCount, list }, userVaults, ... } })
-// and uses camelCase field names different from our TypeScript interfaces
-// (e.g. `assetSymbol` / `apy` / `tvl` instead of `underlyingSymbol` / `supplyAPY` / `totalAssetsUSD`).
-// The tests below confirm connectivity only. A follow-up task should update
-// moolah-backend.ts types and extraction logic to match the real response shape.
+// NOTE: the /index/vault/list and /vault/info endpoints use different field
+// names for the same vault data (vaultAddress vs address, assetDecimals
+// plural vs assetDecimal singular). Our MoolahVaultInfo interface marks all
+// fields optional to tolerate either shape. Tests below check only the
+// list-endpoint field names.
 
-describe("Moolah backend API reachability (mainnet)", () => {
-  it("fetchMoolahVaultList returns a non-null response", skipOn429(async () => {
-    const res = await fetchMoolahVaultList({ pageSize: 2 }, "mainnet");
-    expect(res).toBeTruthy();
+describe("Moolah backend API (mainnet)", () => {
+  it("fetchMoolahVaultList returns flattened shape with real item fields", skipOn429(async () => {
+    const res = await fetchMoolahVaultList({ pageSize: 3 }, "mainnet");
+    expect(Array.isArray(res.list)).toBe(true);
+    expect(typeof res.total).toBe("number");
+    expect(Array.isArray(res.userList)).toBe(true);
+    expect(typeof res.userTotal).toBe("number");
+    expect(Array.isArray(res.depositTokens)).toBe(true);
+    expect(Array.isArray(res.collateralTokens)).toBe(true);
+    if (res.list.length > 0) {
+      const v = res.list[0];
+      // /index/vault/list items expose vaultAddress (not address)
+      expect(typeof v.vaultAddress).toBe("string");
+      expect(typeof v.assetSymbol).toBe("string");
+      expect(typeof v.assetAddress).toBe("string");
+    }
   }));
 
-  it("fetchMoolahMarketList returns a non-null response", skipOn429(async () => {
-    const res = await fetchMoolahMarketList({ pageSize: 2 }, "mainnet");
-    expect(res).toBeTruthy();
+  it("fetchMoolahMarketList returns flattened shape with market items", skipOn429(async () => {
+    const res = await fetchMoolahMarketList({ pageSize: 3 }, "mainnet");
+    expect(Array.isArray(res.list)).toBe(true);
+    expect(typeof res.total).toBe("number");
+    if (res.list.length > 0) {
+      const m = res.list[0];
+      // /index/market/list items expose `id` for market ID (not marketId)
+      expect(typeof (m.id ?? m.marketId)).toBe("string");
+      expect(typeof m.loanSymbol).toBe("string");
+      expect(typeof m.collateralSymbol).toBe("string");
+    }
+  }));
+
+  it("fetchMoolahLiquidationTokenList returns loanSymbols and collateralSymbols arrays", skipOn429(async () => {
+    const res = await fetchMoolahLiquidationTokenList("mainnet");
+    expect(Array.isArray(res.loanSymbols)).toBe(true);
+    expect(Array.isArray(res.collateralSymbols)).toBe(true);
   }));
 });

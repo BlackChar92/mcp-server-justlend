@@ -611,34 +611,29 @@ export const JUSTLEND_ADDRESSES: Record<TronNetwork, JustLendAddresses> = {
         underlyingDecimals: 18,
       },
     },
+    // Nile addresses sourced from front-app src/config/v2config.js.
+    // Note: USDD vault is not deployed on nile — only WTRX and USDT vaults exist.
     moolah: {
       moolahProxy:           "TFgrgsd8c37ByaZx1YxpBzazJS8bHsoP5c",
       trxProviderProxy:      "TMRZwenUVHPvnxhwDDQLY4SEmmwXvtKRjz",
       publicLiquidatorProxy: "TLvPrXHVQCA54gLQjLfoNi5XQ6WqhXCEps",
-      wtrxProxy:             "",  // TODO: confirm nile WTRX address
+      wtrxProxy:             "TYsbWxNnyTgsZaTFaue9hqpxkU3Fkco94a",
       resilientOracleProxy:  "TFYLvDFSEW6dKSnWb3mt76hkHAgxPktrnG",
-      irmProxy:              "",  // TODO: confirm nile IRM address
+      irmProxy:              "TQYeFiTVNfJ6jfqjyfL2s93VLG1huaMEzC",
       vaults: {
         TRX: {
-          address:            "",  // TODO: confirm nile TRX vault address
+          address:            "TWxWVxUv6FvJtWELhLmdKWQRf9eMoVs2ki",
           underlyingSymbol:   "TRX",
           underlying:         "",
           underlyingDecimals: 6,
           sharesDecimals:     6,
         },
         USDT: {
-          address:            "",  // TODO: confirm nile USDT vault address
+          address:            "TXfQWrF4mkq5XFaoRYv3crdhjiKkhdMEx5",
           underlyingSymbol:   "USDT",
-          underlying:         "TPYwAC9Y4uUcT2QH3WPPjqxzJSJWymMoMS",  // nile USDT
+          underlying:         "TPYwAC9Y4uUcT2QH3WPPjqxzJSJWymMoMS",
           underlyingDecimals: 6,
           sharesDecimals:     6,
-        },
-        USDD: {
-          address:            "",  // TODO: confirm nile USDD vault address
-          underlyingSymbol:   "USDD",
-          underlying:         "TZ78R2E6ejfFhxq8hxrmuqT6hGBxjHQbo4",  // nile USDD
-          underlyingDecimals: 18,
-          sharesDecimals:     18,
         },
       },
     },

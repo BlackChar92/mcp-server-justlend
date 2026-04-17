@@ -80,8 +80,8 @@ export function registerMoolahMarketTools(server: McpServer) {
     "get_moolah_user_position",
     {
       description:
-        "Get a user's position in a specific Moolah market: collateral, borrow amount, health factor, and risk level. " +
-        "safePercent > 85% is dangerous — consider repaying or adding collateral.",
+        "Get a user's position in a specific Moolah market: collateral, borrow amount, lltv, and risk ratio. " +
+        "risk close to 1.0 means the position is near liquidation — consider repaying or adding collateral.",
       inputSchema: {
         marketId: z.string().describe("Market ID (bytes32 hex)"),
         address: z.string().optional().describe("User address. Default: configured wallet"),

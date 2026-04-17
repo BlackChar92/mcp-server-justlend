@@ -648,16 +648,16 @@ Key market parameters to explain:
 - **Collateral token / Loan token**: each market is isolated with fixed pairs`}
 
 ## Step 2 — Understand Risk Thresholds
-**safePercent** = (borrowed value) / (collateral value × LLTV) × 100
+The market position API returns a **risk** ratio = (borrowed value) / (collateral value × LLTV).
 
-| safePercent | Status | Action |
+| risk | Status | Action |
 |---|---|---|
-| < 70% | ✅ Healthy | No action needed |
-| 70–85% | ⚠️ Caution | Monitor closely |
-| 85–100% | 🔴 Danger | Repay or add collateral immediately |
-| > 100% | ☠️ Liquidatable | Position will be liquidated |
+| < 0.70 | ✅ Healthy | No action needed |
+| 0.70 – 0.85 | ⚠️ Caution | Monitor closely |
+| 0.85 – 1.00 | 🔴 Danger | Repay or add collateral immediately |
+| > 1.00 | ☠️ Liquidatable | Position will be liquidated |
 
-**Recommendation**: Keep safePercent below 70% to allow for price fluctuations.
+**Recommendation**: Keep risk below 0.70 to allow for price fluctuations.
 
 ## Step 3 — Wallet & Balance Check
 1. Call \`get_wallet_address\` to confirm wallet.
@@ -676,9 +676,7 @@ Call \`moolah_borrow\` with:
 - borrowAmount: '${borrowAmount ?? "<amount or omit>"}'  (omit to only supply collateral)
 
 ## Step 7 — Post-Borrow Safety Check
-Call \`get_moolah_user_position\` again to confirm:
-- safePercent is below 70%
-- healthFactor is above 1.43 (= 1 / 0.70)
+Call \`get_moolah_user_position\` again to confirm risk is below 0.70.
 
 ## Repayment Reminder
 - Full repay: \`moolah_repay\` with amount='max' (uses shares math for exact settlement)
@@ -780,35 +778,34 @@ After the transaction confirms:
 
 ## Step 1 — Aggregated Summary
 Call \`get_moolah_dashboard\`${address ? ` with address='${address}'` : ""} to get:
-- Total supply value (USD)
-- Total borrow value (USD)
-- Net worth (USD)
-- Overall health factor
+- totalSupplyUsd / totalBorrowUsd / totalCollateralUsd
+- netEarnApy / netBorrowRate / dailyRevenue
+- collateralCount
 
 ## Step 2 — Vault Positions
-From the dashboard response, inspect \`userPosition.vaultList\`:
-For each vault with a non-zero balance, display:
-- Vault symbol and underlying token
-- Asset balance and USD value
+From the dashboard response, inspect \`userPosition.vaults\`:
+For each vault entry (fields: vaultAddress / assetSymbol / depositAmount / depositUsd / apy):
+- Vault name and underlying asset
+- Deposit amount and USD value
 - Current APY
 
 If no vault positions exist, note that the user has no V2 vault deposits.
 
 ## Step 3 — Market Positions
-From the dashboard response, inspect \`userPosition.marketList\`:
-For each market with an active borrow, display:
+From the dashboard response, inspect \`userPosition.markets\`:
+For each market entry (fields: marketId / borrowAmount / borrowUsd / collateralAmount / collateralUsd / risk):
 - Loan token and collateral token
 - Borrow amount and collateral amount (with USD values)
-- **safePercent** and healthFactor
+- **risk** ratio (0-1, where 1.0 = at liquidation threshold)
 
 ### Risk Assessment
-| safePercent | Recommendation |
+| risk | Recommendation |
 |---|---|
-| < 70% | ✅ Healthy — no action needed |
-| 70–85% | ⚠️ Consider reducing borrow or adding collateral |
-| > 85% | 🔴 Immediate action required — liquidation risk |
+| < 0.70 | ✅ Healthy — no action needed |
+| 0.70 – 0.85 | ⚠️ Consider reducing borrow or adding collateral |
+| > 0.85 | 🔴 Immediate action required — liquidation risk |
 
-For any market with safePercent > 80%, suggest:
+For any market with risk > 0.80, suggest:
 1. Repay borrow: \`moolah_repay\` with marketId and amount='max'
 2. Add collateral: \`moolah_supply_collateral\`
 

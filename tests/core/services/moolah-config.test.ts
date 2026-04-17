@@ -72,4 +72,28 @@ describe("Moolah V2 config", () => {
       expect(host).toMatch(/^https:\/\//);
     });
   });
+
+  describe("getMoolahAddresses (nile)", () => {
+    const m = getMoolahAddresses("nile");
+
+    it("has all core addresses filled (no empty TODOs)", () => {
+      expect(m.moolahProxy).toMatch(/^T[A-Za-z0-9]{33}$/);
+      expect(m.trxProviderProxy).toMatch(/^T[A-Za-z0-9]{33}$/);
+      expect(m.publicLiquidatorProxy).toMatch(/^T[A-Za-z0-9]{33}$/);
+      expect(m.wtrxProxy).toMatch(/^T[A-Za-z0-9]{33}$/);
+      expect(m.resilientOracleProxy).toMatch(/^T[A-Za-z0-9]{33}$/);
+      expect(m.irmProxy).toMatch(/^T[A-Za-z0-9]{33}$/);
+    });
+
+    it("has TRX and USDT vaults but NOT USDD (USDD vault is not deployed on nile)", () => {
+      expect(Object.keys(m.vaults).sort()).toEqual(["TRX", "USDT"]);
+    });
+
+    it("nile USDT uses a different underlying than mainnet", () => {
+      const nileUsdt = m.vaults.USDT.underlying;
+      expect(nileUsdt).toBe("TPYwAC9Y4uUcT2QH3WPPjqxzJSJWymMoMS");
+      // Mainnet USDT is TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t — confirm they differ
+      expect(nileUsdt).not.toBe("TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t");
+    });
+  });
 });

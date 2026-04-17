@@ -2,234 +2,362 @@
  * JustLend V2 (Moolah) — REST backend API client.
  * Wraps https://zenvora.ablesdxd.link endpoints used by the frontend (V2backend.js).
  * All functions are read-only; no wallet or signing required.
+ *
+ * Response envelope: { code, data: <payload>, message?, timestamp? }
+ * apiGet() unwraps to the payload. For list endpoints, payload shape is nested
+ * (e.g. { allVaults: { list, totalCount }, userVaults: {...}, ... }) — individual
+ * fetch functions flatten to { list, total, ... } for consumer ergonomics.
  */
 import { fetchWithTimeout } from "./http.js";
 import { getMoolahApiHost } from "../chains.js";
 
-// ── Response types ────────────────────────────────────────────────────────────
+// ── Token reference ──────────────────────────────────────────────────────────
+
+export interface MoolahTokenRef {
+  address: string;
+  symbol: string;
+  decimal?: number;
+  icon?: string;
+  name?: string;
+}
+
+// ── User: aggregated overview ────────────────────────────────────────────────
 
 export interface MoolahUserPosition {
-  totalSupplyUSD: string;
-  totalBorrowUSD: string;
-  netWorthUSD:    string;
-  healthFactor?:  string;   // "∞" when no borrows
-  risk?:          string;   // debt / (collateral × lltv), numeric string
-  vaultList?:     MoolahUserVaultPosition[];
-  marketList?:    MoolahUserMarketPosition[];
+  totalBorrowUsd?:    string;
+  totalCollateralUsd?: string;
+  totalSupplyUsd?:    string;
+  netEarnApy?:        string;
+  netBorrowRate?:     string;
+  dailyRevenue?:      string;
+  collateralCount?:   number;
+  vaults?:            MoolahUserVaultPosition[];
+  markets?:           MoolahUserMarketPositionSummary[];
+  borrowNew?:         any;
+  vaultNew?:          any;
 }
 
 export interface MoolahUserVaultPosition {
-  vaultAddress:    string;
-  underlyingSymbol: string;
-  sharesBalance:   string;
-  assetsBalance:   string;
-  assetsUSD:       string;
-  supplyAPY:       string;
+  vaultAddress:   string;
+  vaultName?:     string;
+  assetAddress:   string;
+  assetSymbol:    string;
+  depositAmount?: string;
+  depositUsd?:    string;
+  shareAmount?:   string;
+  apy?:           string;
 }
 
-export interface MoolahUserMarketPosition {
-  marketId:        string;
-  loanToken:       string;
-  collateralToken: string;
-  borrowAmount:    string;
-  borrowAmountUSD: string;
-  collateralAmount:    string;
-  collateralAmountUSD: string;
-  safePercent:     string;   // 0-100+, percentage of LLTV used
-  healthFactor:    string;
+export interface MoolahUserMarketPositionSummary {
+  marketId:          string;
+  loanSymbol?:       string;
+  collateralSymbol?: string;
+  borrowAmount?:     string;
+  borrowUsd?:        string;
+  collateralAmount?: string;
+  collateralUsd?:    string;
+  risk?:             string;
 }
 
 export interface MoolahPositionHistory {
-  timestamp: number;
-  supplyUSD: string;
-  borrowUSD: string;
-  netWorthUSD: string;
+  supplyList?:     MoolahHistoryPoint[];
+  borrowList?:     MoolahHistoryPoint[];
+  collateralList?: MoolahHistoryPoint[];
 }
 
-// ── Vault types ───────────────────────────────────────────────────────────────
+export interface MoolahHistoryPoint {
+  timestamp: number;
+  amount?:   string;
+  usd?:      string;
+}
+
+// ── Vault types ──────────────────────────────────────────────────────────────
 
 export interface MoolahVaultListParams {
-  sort?:      string;
-  order?:     "asc" | "desc";
-  deposit?:   string;   // filter by deposit token symbol
-  collateral?: string;  // filter by collateral token symbol
-  keyword?:   string;
-  page?:      number;
-  pageSize?:  number;
+  sort?:       string;
+  order?:      "asc" | "desc";
+  deposit?:    string;
+  collateral?: string;
+  keyword?:    string;
+  page?:       number;
+  pageSize?:   number;
+  address?:    string;
 }
 
+/**
+ * Vault entry as returned by the list and info endpoints.
+ * NOTE: The two endpoints use different field names for the same vault data —
+ * /index/vault/list uses `vaultAddress`/`vaultName`/`assetDecimals` (plural), while
+ * /vault/info uses `address`/`name`/`assetDecimal` (singular) and adds `asset` etc.
+ * All fields are optional so consumers must tolerate either shape.
+ */
 export interface MoolahVaultInfo {
-  vaultAddress:    string;
-  underlyingSymbol: string;
-  underlyingAddress: string;
-  totalAssets:     string;   // human-readable underlying amount
-  totalAssetsUSD:  string;
-  supplyAPY:       string;   // e.g. "8.42"
-  totalSupplyShares: string;
-  curatorAddress?: string;
+  // /index/vault/list fields
+  vaultAddress?:    string;
+  vaultName?:       string;
+  vaultSymbol?:     string;
+  assetAddress?:    string;
+  assetSymbol?:     string;
+  assetName?:       string;
+  assetDecimals?:   number;
+  totalSupplyAmount?: string;
+  performanceFee?:  string;
+  collateralTokens?: MoolahTokenRef[];
+  markets?:         any[];
+  allocations?:     any[];
+  // /vault/info fields
+  address?:         string;
+  name?:            string;
+  desc?:            string;
+  descEn?:          string;
+  descZh?:          string;
+  asset?:           string;
+  assetDecimal?:    number;
+  tvlInUsd?:        string;
+  liquidity?:       string;
+  liquidityInUsd?:  string;
+  shareValue?:      string;
+  curator?:         string;
+  curatorAddress?:  string;
+  fee?:             string;
+  feeRecipient?:    string;
+  interest?:        string;
+  interestInUsd?:   string;
+  timelock?:        any;
+  createAt?:        any;
+  supplyHeadCount?: number;
+  icon?:            string;
+  tags?:            any[];
+  // Fields common to both
+  apy?:             string;
+  tvl?:             string;
+  totalSupply?:     string;
 }
 
 export interface MoolahVaultApyHistory {
-  timestamp: number;
-  apy:       string;
+  timestamps?:    number[];
+  apyHistory?:    string[];
+  tvlHistory?:    string[];
+  supplyHistory?: string[];
+  [key: string]:  any;
 }
 
 export interface MoolahVaultAllocationItem {
-  marketId:        string;
-  loanToken:       string;
-  collateralToken: string;
-  allocatedAssets: string;
-  allocatedUSD:    string;
-  cap?:            string;
+  marketId:         string;
+  borrowToken?:     MoolahTokenRef;
+  collateralToken?: MoolahTokenRef;
+  allocatedAmount?: string;
+  allocatedUsd?:    string;
+  percent?:         string;
+  borrowApy?:       string;
+  risk?:            string;
+  cap?:             string;
 }
 
 export interface MoolahUserVaultBalance {
-  vaultAddress:   string;
-  sharesBalance:  string;
-  assetsBalance:  string;   // converted using current exchange rate
-  assetsUSD:      string;
-  maxWithdraw:    string;
+  depositAmount?: string;
+  depositUsd?:    string;
+  shareAmount?:   string;
+  apy?:           string;
+  dailyEarnings?: string;
 }
 
 export interface MoolahVaultListResponse {
-  total:  number;
-  list:   MoolahVaultInfo[];
+  list:             MoolahVaultInfo[];
+  total:            number;
+  userList?:        MoolahVaultInfo[];
+  userTotal?:       number;
+  depositTokens?:   MoolahTokenRef[];
+  collateralTokens?: MoolahTokenRef[];
 }
 
 export interface MoolahVaultAllocationResponse {
-  total: number;
-  list:  MoolahVaultAllocationItem[];
+  list:              MoolahVaultAllocationItem[];
+  total:             number;
+  remainSupplyCap?:  string;
 }
 
-// ── Market types ──────────────────────────────────────────────────────────────
+// ── Market types ─────────────────────────────────────────────────────────────
 
 export interface MoolahMarketListParams {
-  sort?:      string;
-  order?:     "asc" | "desc";
-  deposit?:   string;
-  collateral?: string;
-  keyword?:   string;
-  page?:      number;
-  pageSize?:  number;
+  sort?:          string;
+  order?:         "asc" | "desc";
+  deposit?:       string;
+  collateral?:    string;
+  keyword?:       string;
+  page?:          number;
+  pageSize?:      number;
+  userPage?:      number;
+  userPageSize?:  number;
+  allPage?:       number;
+  allPageSize?:   number;
 }
 
+/**
+ * Market entry. /index/market/list uses `id` as the market ID; /market/marketInfo
+ * may expose it as `marketId`. Decimals differ too (`collateralDecimals` plural
+ * in list, `collateralDecimal` singular in detail).
+ */
 export interface MoolahMarketInfo {
-  marketId:        string;
-  loanToken:       string;
-  loanTokenSymbol: string;
-  collateralToken:        string;
-  collateralTokenSymbol:  string;
-  oracle:          string;
-  irm:             string;
-  lltv:            string;   // percentage, e.g. "75"
-  borrowAPY:       string;
-  supplyAPY:       string;
-  totalSupplyAssets:  string;
-  totalBorrowAssets:  string;
-  utilization:     string;   // percentage
-  liquidityUSD:    string;
+  id?:                  string;
+  marketId?:            string;
+  marketName?:          string;
+  loanAddress?:         string;
+  loanSymbol?:          string;
+  loanDecimal?:         number;
+  loanDecimals?:        number;
+  loanIcon?:            string;
+  borrowAddress?:       string;
+  borrowSymbol?:        string;
+  borrowDecimal?:       number;
+  borrowDecimals?:      number;
+  collateralAddress?:   string;
+  collateralSymbol?:    string;
+  collateralDecimal?:   number;
+  collateralDecimals?:  number;
+  collateralIcon?:      string;
+  borrowPrice?:         string;
+  collateralPrice?:     string;
+  ltv?:                 string | null;
+  lltv?:                string;
+  borrowApy?:           string;
+  supplyApy?:           string;
+  borrowRate?:          string;
+  liquidity?:           string;
+  liquidityUsd?:        string;
+  tvl?:                 string;
+  minLoanValue?:        string;
+  oracleAddress?:       string;
+  interestModeAddress?: string;
+  totalBorrowShares?:   string;
+  totalBorrowAssets?:   string;
+  loanAmount?:          string | null;
+  loanUsd?:             string | null;
+  collateralAmount?:    string | null;
+  collateralUsd?:       string | null;
+  risk?:                string | null;
+  tags?:                any[];
 }
 
 export interface MoolahMarketApyHistory {
-  timestamp: number;
-  borrowAPY: string;
-  supplyAPY: string;
-  utilization: string;
+  timestamps?:         number[];
+  borrowApyHistory?:   string[];
+  supplyApyHistory?:   string[];
+  liquidityHistory?:   string[];
+  tvlHistory?:         string[];
+  [key: string]:       any;
 }
 
 export interface MoolahUserMarketPositionDetail {
-  marketId:            string;
-  loanToken:           string;
-  collateralToken:     string;
-  supplyShares:        string;
-  supplyAssets:        string;
-  supplyUSD:           string;
-  borrowShares:        string;
-  borrowAssets:        string;
-  borrowUSD:           string;
-  collateralAssets:    string;
-  collateralUSD:       string;
-  safePercent:         string;
-  healthFactor:        string;
-  maxBorrowUSD:        string;
-  maxRedeemCollateral: string;
+  borrowAmount?:      string;
+  borrowUsd?:         string;
+  borrowShares?:      string;
+  collateralAmount?:  string;
+  collateralUsd?:     string;
+  borrowAddress?:     string;
+  borrowSymbol?:      string;
+  collateralAddress?: string;
+  collateralSymbol?:  string;
+  lltv?:              string;
+  risk?:              string;
+}
+
+/** Vault supplying liquidity to a market (/market/vault-list entry). */
+export interface MoolahMarketSupplyingVault {
+  vaultAddress:        string;
+  vaultName?:          string;
+  assetTokenAddress?:  string;
+  assetTokenSymbol?:   string;
+  allocationAmount?:   string;
+  allocationUsd?:      string;
+  allocationPercent?:  string;
+  apy?:                string;
 }
 
 export interface MoolahMarketListResponse {
-  total: number;
-  list:  MoolahMarketInfo[];
+  list:       MoolahMarketInfo[];
+  total:      number;
+  userList?:  MoolahMarketInfo[];
+  userTotal?: number;
 }
 
-// ── Liquidation types ─────────────────────────────────────────────────────────
+// ── Liquidation types ────────────────────────────────────────────────────────
 
 export interface MoolahLiquidationListParams {
   sort?:         string;
   order?:        "asc" | "desc";
   page?:         number;
   pageSize?:     number;
-  minRiskLevel?: number;  // 0.0–∞; >1.0 means liquidatable
+  minRiskLevel?: number;
   maxRiskLevel?: number;
-  debt?:         string;  // filter by loan token symbol
-  collateral?:   string;  // filter by collateral token symbol
+  debt?:         string;
+  collateral?:   string;
 }
 
 export interface MoolahPendingLiquidation {
-  borrower:           string;
-  marketId:           string;
-  loanToken:          string;
-  loanTokenSymbol:    string;
-  collateralToken:    string;
-  collateralTokenSymbol: string;
-  borrowAssets:       string;
-  borrowUSD:          string;
-  collateralAssets:   string;
-  collateralUSD:      string;
-  riskLevel:          string;   // numeric string; >1 = liquidatable
-  maxSeizableAssets?: string;
+  userAddress:       string;
+  marketId:          string;
+  debtToken?:        string;
+  debtAmount?:       string;
+  collateralToken?:  string;
+  collateralAmount?: string;
+  borrowUsd?:        string;
+  collateralUsd?:    string;
+  lltv?:             string;
+  riskLevel?:        string;
+  risk?:             string;
 }
 
 export interface MoolahLiquidationRecord {
-  txHash:          string;
-  blockTime:       number;
-  borrower:        string;
-  liquidator:      string;
-  marketId:        string;
-  loanToken:       string;
-  collateralToken: string;
-  repaidAssets:    string;
-  seizedAssets:    string;
-  type:            "bot" | "public";
+  txHash:             string;
+  timestamp:          number;
+  userAddress:        string;
+  liquidatorAddress?: string;
+  marketId:           string;
+  debtToken?:         string;
+  debtAmount?:        string;
+  collateralToken?:   string;
+  collateralAmount?:  string;
+  profit?:            string;
+  type:               string;   // "public" | "bot"
 }
 
 export interface MoolahPendingLiquidationResponse {
-  total: number;
-  list:  MoolahPendingLiquidation[];
+  list:        MoolahPendingLiquidation[];
+  total:       number;
+  updateTime?: number;
 }
 
 export interface MoolahLiquidationRecordResponse {
-  total: number;
   list:  MoolahLiquidationRecord[];
+  total: number;
 }
 
-// ── Transaction records ───────────────────────────────────────────────────────
+export interface MoolahLiquidationTokenList {
+  loanSymbols:       string[];
+  collateralSymbols: string[];
+}
+
+// ── Transaction records ──────────────────────────────────────────────────────
 
 export interface MoolahTransactionRecord {
-  txHash:     string;
-  blockTime:  number;
-  action:     string;   // "supply" | "withdraw" | "borrow" | "repay" | "supplyCollateral" | etc.
-  token:      string;
-  amount:     string;
-  amountUSD:  string;
-  marketId?:  string;
+  txHash:        string;
+  timestamp:     number;
   vaultAddress?: string;
+  vaultName?:    string;
+  assetAddress?: string;
+  assetSymbol?:  string;
+  amount?:       string;
+  usd?:          string;
+  type?:         string;   // "deposit" | "withdraw" | ...
 }
 
 export interface MoolahRecordResponse {
-  total: number;
   list:  MoolahTransactionRecord[];
+  total: number;
 }
 
-// ── API helpers ───────────────────────────────────────────────────────────────
+// ── API helpers ──────────────────────────────────────────────────────────────
 
 async function apiGet<T>(
   path: string,
@@ -250,7 +378,7 @@ async function apiGet<T>(
 
   const json = await res.json();
 
-  // Common envelope patterns: { data: ... } or { retCode, data: ... } or raw
+  // Common envelope: { code, data, message?, timestamp? }
   if (json !== null && typeof json === "object") {
     if (json.data !== undefined)   return json.data as T;
     if (json.result !== undefined) return json.result as T;
@@ -258,7 +386,7 @@ async function apiGet<T>(
   return json as T;
 }
 
-// ── User: overview ────────────────────────────────────────────────────────────
+// ── User: overview ───────────────────────────────────────────────────────────
 
 /** Aggregated V2 position for a user (vaults + markets combined). */
 export async function fetchMoolahUserPosition(
@@ -273,22 +401,38 @@ export async function fetchMoolahUserPositionHistory(
   userAddress: string,
   timeFilter: "ONE_DAY" | "ONE_WEEK" | "ONE_MONTH" = "ONE_DAY",
   network = "mainnet",
-): Promise<MoolahPositionHistory[]> {
-  return apiGet<MoolahPositionHistory[]>(
+): Promise<MoolahPositionHistory> {
+  return apiGet<MoolahPositionHistory>(
     "/index/history-records",
     { userAddress, timeFilter },
     network,
   );
 }
 
-// ── Vault endpoints ───────────────────────────────────────────────────────────
+// ── Vault endpoints ──────────────────────────────────────────────────────────
 
-/** Paginated list of all Moolah vaults with APY and TVL. */
+/**
+ * Paginated list of all Moolah vaults plus user-specific vaults if address is provided.
+ * Flattens the nested { allVaults: { list, totalCount }, userVaults: {...} } payload
+ * into a consumer-friendly { list, total, userList, userTotal, ... } shape.
+ */
 export async function fetchMoolahVaultList(
   params: MoolahVaultListParams = {},
   network = "mainnet",
 ): Promise<MoolahVaultListResponse> {
-  return apiGet<MoolahVaultListResponse>("/index/vault/list", { pageSize: 20, page: 0, ...params }, network);
+  const raw = await apiGet<any>(
+    "/index/vault/list",
+    { pageSize: 20, page: 0, ...params },
+    network,
+  );
+  return {
+    list:             raw?.allVaults?.list ?? [],
+    total:            raw?.allVaults?.totalCount ?? 0,
+    userList:         raw?.userVaults?.list ?? [],
+    userTotal:        raw?.userVaults?.totalCount ?? 0,
+    depositTokens:    raw?.depositTokens ?? [],
+    collateralTokens: raw?.collateralTokens ?? [],
+  };
 }
 
 /** Detailed metadata for a single vault. */
@@ -299,12 +443,12 @@ export async function fetchMoolahVaultInfo(
   return apiGet<MoolahVaultInfo>("/vault/info", { address: vaultAddress }, network);
 }
 
-/** Historical APY time series for a vault. */
+/** Historical APY / TVL time series for a vault. */
 export async function fetchMoolahVaultApyHistory(
   vaultAddress: string,
   network = "mainnet",
-): Promise<MoolahVaultApyHistory[]> {
-  return apiGet<MoolahVaultApyHistory[]>("/vault/history-data", { vaultAddress }, network);
+): Promise<MoolahVaultApyHistory> {
+  return apiGet<MoolahVaultApyHistory>("/vault/history-data", { vaultAddress }, network);
 }
 
 /** Markets the vault allocates funds to, with caps and amounts. */
@@ -313,11 +457,16 @@ export async function fetchMoolahVaultAllocation(
   params: { sort?: string; order?: "asc" | "desc"; page?: number; pageSize?: number } = {},
   network = "mainnet",
 ): Promise<MoolahVaultAllocationResponse> {
-  return apiGet<MoolahVaultAllocationResponse>(
+  const raw = await apiGet<any>(
     "/vault/allocation",
     { address: vaultAddress, pageSize: 20, page: 0, ...params },
     network,
   );
+  return {
+    list:             raw?.list ?? [],
+    total:            raw?.totalCount ?? 0,
+    remainSupplyCap:  raw?.remainSupplyCap,
+  };
 }
 
 /** A specific user's share balance and current asset value in a vault. */
@@ -326,17 +475,35 @@ export async function fetchMoolahUserVaultPosition(
   userAddress: string,
   network = "mainnet",
 ): Promise<MoolahUserVaultBalance> {
-  return apiGet<MoolahUserVaultBalance>("/vault/position", { vaultAddress, address: userAddress }, network);
+  return apiGet<MoolahUserVaultBalance>(
+    "/vault/position",
+    { vaultAddress, address: userAddress },
+    network,
+  );
 }
 
-// ── Market endpoints ──────────────────────────────────────────────────────────
+// ── Market endpoints ─────────────────────────────────────────────────────────
 
-/** Paginated list of all Moolah markets with rates and liquidity. */
+/**
+ * Paginated list of all Moolah markets plus user-specific markets if applicable.
+ * Flattens { allMarkets, userMarkets, allMarketsCount, userMarketsCount } into
+ * a consumer-friendly { list, total, userList, userTotal } shape.
+ */
 export async function fetchMoolahMarketList(
   params: MoolahMarketListParams = {},
   network = "mainnet",
 ): Promise<MoolahMarketListResponse> {
-  return apiGet<MoolahMarketListResponse>("/index/market/list", { pageSize: 20, page: 0, ...params }, network);
+  const raw = await apiGet<any>(
+    "/index/market/list",
+    { pageSize: 20, page: 0, ...params },
+    network,
+  );
+  return {
+    list:      raw?.allMarkets ?? [],
+    total:     raw?.allMarketsCount ?? 0,
+    userList:  raw?.userMarkets ?? [],
+    userTotal: raw?.userMarketsCount ?? 0,
+  };
 }
 
 /** Full metadata for a single market by marketId (bytes32 hex). */
@@ -347,20 +514,25 @@ export async function fetchMoolahMarketInfo(
   return apiGet<MoolahMarketInfo>("/market/marketInfo", { marketId }, network);
 }
 
-/** Historical borrow/supply APY and utilization curve for a market. */
+/** Historical borrow/supply APY and liquidity curve for a market. */
 export async function fetchMoolahMarketApyHistory(
   marketId: string,
   network = "mainnet",
-): Promise<MoolahMarketApyHistory[]> {
-  return apiGet<MoolahMarketApyHistory[]>("/market/history-data", { marketId }, network);
+): Promise<MoolahMarketApyHistory> {
+  return apiGet<MoolahMarketApyHistory>("/market/history-data", { marketId }, network);
 }
 
-/** Vaults that supply liquidity to a given market. */
+/** Vaults that supply liquidity to a given market. Returns an array directly. */
 export async function fetchMoolahMarketVaultList(
   marketId: string,
   network = "mainnet",
-): Promise<MoolahVaultInfo[]> {
-  return apiGet<MoolahVaultInfo[]>("/market/vault-list", { marketId }, network);
+): Promise<MoolahMarketSupplyingVault[]> {
+  const raw = await apiGet<MoolahMarketSupplyingVault[] | any>(
+    "/market/vault-list",
+    { marketId },
+    network,
+  );
+  return Array.isArray(raw) ? raw : (raw?.list ?? []);
 }
 
 /** A specific user's position in a market (includes risk metrics). */
@@ -376,18 +548,23 @@ export async function fetchMoolahUserMarketPosition(
   );
 }
 
-// ── Liquidation endpoints ─────────────────────────────────────────────────────
+// ── Liquidation endpoints ────────────────────────────────────────────────────
 
 /** Paginated list of positions eligible for liquidation. */
 export async function fetchMoolahPendingLiquidations(
   params: MoolahLiquidationListParams = {},
   network = "mainnet",
 ): Promise<MoolahPendingLiquidationResponse> {
-  return apiGet<MoolahPendingLiquidationResponse>(
+  const raw = await apiGet<any>(
     "/liquidate/pendingLiquidations",
     { pageSize: 20, page: 0, ...params },
     network,
   );
+  return {
+    list:       raw?.list ?? [],
+    total:      raw?.totalCount ?? 0,
+    updateTime: raw?.updateTime,
+  };
 }
 
 /** Historical liquidation events (bot and public liquidators). */
@@ -401,24 +578,43 @@ export async function fetchMoolahLiquidationRecords(
   } = {},
   network = "mainnet",
 ): Promise<MoolahLiquidationRecordResponse> {
-  return apiGet<MoolahLiquidationRecordResponse>(
+  const raw = await apiGet<any>(
     "/liquidate/records",
     { pageSize: 20, page: 0, ...params },
     network,
   );
+  return {
+    list:  raw?.list ?? [],
+    total: raw?.totalCount ?? 0,
+  };
 }
 
-// ── Transaction record endpoint ───────────────────────────────────────────────
+/** List of loan / collateral token symbols available across pending liquidations. */
+export async function fetchMoolahLiquidationTokenList(
+  network = "mainnet",
+): Promise<MoolahLiquidationTokenList> {
+  const raw = await apiGet<MoolahLiquidationTokenList>("/liquidate/tokenList", {}, network);
+  return {
+    loanSymbols:       raw?.loanSymbols ?? [],
+    collateralSymbols: raw?.collateralSymbols ?? [],
+  };
+}
 
-/** A user's V2 transaction history (supply, borrow, repay, etc.). */
+// ── Transaction record endpoint ──────────────────────────────────────────────
+
+/** A user's V2 transaction history (deposit, withdraw, borrow, repay, etc.). */
 export async function fetchMoolahUserRecords(
   userAddress: string,
   params: { pageNo?: number; pageSize?: number } = {},
   network = "mainnet",
 ): Promise<MoolahRecordResponse> {
-  return apiGet<MoolahRecordResponse>(
+  const raw = await apiGet<any>(
     "/record/lend",
-    { address: userAddress, pageNo: 0, pageSize: 20, ...params },
+    { address: userAddress, pageNo: 1, pageSize: 20, ...params },
     network,
   );
+  return {
+    list:  raw?.list ?? [],
+    total: raw?.totalCount ?? 0,
+  };
 }

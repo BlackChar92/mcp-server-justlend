@@ -30,7 +30,7 @@ export interface MoolahDashboard {
 
 export interface MoolahUserSummary {
   position: MoolahUserPosition;
-  history: MoolahPositionHistory[];
+  history: MoolahPositionHistory;
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -59,9 +59,11 @@ export async function getMoolahDashboard(params: {
     fetchMoolahMarketList({ pageSize: marketPageSize, deposit: depositToken, collateral: collateralToken }, network),
   ]);
 
+  // The /index/market/list endpoint ignores pageSize; enforce the cap client-side
+  // so consumers get a predictable bound.
   return {
-    vaults: vaultRes.list ?? [],
-    markets: marketRes.list ?? [],
+    vaults: (vaultRes.list ?? []).slice(0, vaultPageSize),
+    markets: (marketRes.list ?? []).slice(0, marketPageSize),
     totalVaults: vaultRes.total ?? 0,
     totalMarkets: marketRes.total ?? 0,
   };
@@ -93,7 +95,7 @@ export async function getMoolahUserSummary(params: {
 export async function getMoolahVaultHistory(params: {
   vaultAddress: string;
   network?: string;
-}): Promise<MoolahVaultApyHistory[]> {
+}): Promise<MoolahVaultApyHistory> {
   return fetchMoolahVaultApyHistory(params.vaultAddress, params.network ?? "mainnet");
 }
 
@@ -101,6 +103,6 @@ export async function getMoolahVaultHistory(params: {
 export async function getMoolahMarketHistory(params: {
   marketId: string;
   network?: string;
-}): Promise<MoolahMarketApyHistory[]> {
+}): Promise<MoolahMarketApyHistory> {
   return fetchMoolahMarketApyHistory(params.marketId, params.network ?? "mainnet");
 }

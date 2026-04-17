@@ -7,21 +7,22 @@
 ![JustLend](https://img.shields.io/badge/Protocol-JustLend_DAO-green)
 ![npm](https://img.shields.io/badge/npm-@justlend/mcp--server--justlend-CB3837)
 
-A Model Context Protocol (MCP) server that enables AI agents to interact with the **JustLend DAO** lending protocol on TRON. Supply assets, borrow against collateral, manage positions, and analyze DeFi portfolios — all through a unified AI interface.
+A Model Context Protocol (MCP) server that enables AI agents to interact with the **JustLend DAO** lending protocol on TRON. Supply assets, borrow against collateral, manage positions, participate in V2 (Moolah) isolated markets and vaults, and analyze DeFi portfolios — all through a unified AI interface.
 
 Beyond JustLend-specific operations, the server also exposes a full set of **general-purpose TRON chain utilities** — balance queries, block/transaction data, token metadata, TRX transfers, smart contract reads/writes, staking (Stake 2.0), multicall, and more.
 
 ## Overview
 
-[JustLend DAO](https://justlend.org) is the largest lending protocol on TRON, based on the Compound V2 architecture. This MCP server wraps the full protocol functionality into tools and guided prompts that local MCP clients such as Claude Desktop, Codex, Claude Code, and Cursor can use.
+[JustLend DAO](https://justlend.org) is the largest lending protocol on TRON. This MCP server wraps the full protocol functionality into tools and guided prompts that local MCP clients such as Claude Desktop, Codex, Claude Code, and Cursor can use.
 
-**📌 Current Version: JustLend V1**
+**📌 Current Version: v1.1.0 — supports both JustLend V1 and JustLend V2 (Moolah)**
 
-This MCP server currently supports **JustLend V1** protocol. All contract addresses, ABIs, calculation functions, and lending operations are for V1.
+- **JustLend V1** (Compound V2 fork): the original pool-based protocol — `jUSDT`, `jTRX`, `jUSDD`, `jSUN`, `jWBTC`, etc. Full supply / borrow / repay / withdraw / collateral management and mining rewards.
+- **JustLend V2 (Moolah)** (Morpho Blue fork): isolated markets with `MarketParams (loanToken, collateralToken, oracle, irm, lltv)` and ERC4626 vaults that auto-allocate across markets. Full vault deposit / redeem, collateral supply / borrow / repay / liquidate, and public liquidations.
 
 ### Key Capabilities
 
-#### JustLend Protocol
+#### JustLend V1 (pool-based, Compound V2 fork)
 - **Market Data**: Real-time APYs, TVL, utilization rates, prices for all markets
   - Smart fallback: contract queries first, API fallback for reliability
   - TTL caching (30–60s) to reduce RPC calls
@@ -38,6 +39,16 @@ This MCP server currently supports **JustLend V1** protocol. All contract addres
 - **JST Voting / Governance**: View proposals, cast votes, deposit/withdraw JST for voting power, reclaim votes
 - **Energy Rental**: Rent energy from JustLend, calculate rental prices, query rental orders, return/cancel rentals
 - **sTRX Staking**: Stake TRX to receive sTRX, unstake sTRX, claim staking rewards, check withdrawal eligibility
+
+#### JustLend V2 — Moolah (New in v1.1.0)
+- **ERC4626 Vaults** (TRX / USDT / USDD on mainnet; TRX + USDT on nile): auto-compounding yield with a curator that allocates deposits across isolated markets. Deposit / withdraw (by asset amount or `max`) / redeem (by shares) with TRC20 approvals handled as a separate tool so LLMs can reason about each step.
+- **Isolated Markets**: each market is a `(loanToken, collateralToken, oracle, irm, lltv)` tuple. Supply collateral → borrow → repay → withdraw collateral, plus a composite `moolah_borrow` that handles collateral+borrow as two sequential txs. TRX routes through the `TrxProviderProxy` contract; TRC20 goes through `MoolahProxy` directly.
+- **Public Liquidations**: list undercollateralized positions (`risk > 1.0`), quote loan-token requirement for a target seize, execute liquidation. Includes an explicit `approve_liquidator_token` step.
+- **Dashboard + History**: aggregated user position, APY / TVL time-series for vaults and markets, paginated V2 transaction records.
+- **Gas estimation**: `estimate_moolah_energy` returns typical historical energy / bandwidth / TRX cost for every V2 write op.
+
+#### Historical records (New in v1.1.0)
+- Paginated REST wrappers for V1 lending / sTRX / voting / energy-rental / liquidation history, plus V2 Moolah records. Each endpoint's numeric action/op codes are enriched with human-readable names (`actionName` / `opName`) client-side so MCP tools are self-describing.
 
 #### Browser Wallet Signing (New in v1.0.3)
 - **TronLink Integration**: Connect TronLink or other browser wallets via localhost HTTP bridge
@@ -57,6 +68,8 @@ This MCP server currently supports **JustLend V1** protocol. All contract addres
 
 ## Supported Markets
 
+### JustLend V1 (pool-based)
+
 | jToken | Underlying | Description |
 |--------|-----------|-------------|
 | jTRX   | TRX       | Native TRON token |
@@ -67,6 +80,16 @@ This MCP server currently supports **JustLend V1** protocol. All contract addres
 | jSUN   | SUN       | SUN token |
 | jWIN   | WIN       | WINkLink |
 | jTUSD  | TUSD      | TrueUSD |
+
+### JustLend V2 (Moolah) — vaults
+
+| Vault | Underlying | Mainnet | Nile |
+|-------|-----------|---------|------|
+| TRX   | native TRX | ✅ | ✅ |
+| USDT  | TRC20 USDT | ✅ | ✅ (different underlying address from mainnet) |
+| USDD  | TRC20 USDD | ✅ | ❌ (not deployed on nile) |
+
+Markets are not enumerated here because they are created dynamically on-chain; use `get_moolah_markets` to list them at runtime (each market returns a `marketId` / `id` plus `loanSymbol` / `collateralSymbol` / `lltv` / rates).
 
 ## Prerequisites
 
@@ -295,7 +318,9 @@ npm run dev:http     # HTTP/SSE with auto-reload
 
 ## API Reference
 
-### Tools (59 total)
+### Tools (90 total)
+
+Numbers by category: V1 base 59 · Moolah V2 21 · Records 6 · History/rewards 3 · Estimator (V2) 1.
 
 #### Wallet & Network
 | Tool | Description | Write? |
@@ -392,20 +417,75 @@ npm run dev:http     # HTTP/SSE with auto-reload
 | `transfer_trx` | Transfer TRX to another address (with balance check) | **Yes** |
 | `transfer_trc20` | Transfer TRC20 tokens by symbol or contract address | **Yes** |
 
+#### JustLend V2 (Moolah) — Vaults
+| Tool | Description | Write? |
+|------|-------------|--------|
+| `get_moolah_vaults` | List all Moolah vaults with APY / TVL | No |
+| `get_moolah_vault` | Single vault details + allocation + user position (if address provided) | No |
+| `approve_moolah_vault` | Approve underlying TRC20 for a vault (not needed for TRX vault) | **Yes** |
+| `moolah_vault_deposit` | Deposit into an ERC4626 vault | **Yes** |
+| `moolah_vault_withdraw` | Withdraw by underlying amount; `"max"` supported | **Yes** |
+| `moolah_vault_redeem` | Redeem by share amount; `"max"` supported | **Yes** |
+
+#### JustLend V2 (Moolah) — Markets
+| Tool | Description | Write? |
+|------|-------------|--------|
+| `get_moolah_markets` | List all Moolah markets with borrow/supply APY, LLTV, liquidity | No |
+| `get_moolah_market` | Single market details + supplying vaults | No |
+| `get_moolah_user_position` | User position in a market: collateral, borrow, `risk` (0–1 ratio) | No |
+| `approve_moolah_proxy` | Approve TRC20 for MoolahProxy (collateral or loan token) | **Yes** |
+| `moolah_supply_collateral` | Supply collateral to a market (TRX → TrxProviderProxy; TRC20 → MoolahProxy) | **Yes** |
+| `moolah_withdraw_collateral` | Withdraw collateral; `"max"` supported (only when no active borrows) | **Yes** |
+| `moolah_borrow` | Borrow; accepts `collateralAmount` only, `borrowAmount` only, or both (composite) | **Yes** |
+| `moolah_repay` | Repay by amount; `"max"` uses shares path for exact settlement | **Yes** |
+
+#### JustLend V2 (Moolah) — Liquidation
+| Tool | Description | Write? |
+|------|-------------|--------|
+| `get_moolah_pending_liquidations` | List positions eligible for liquidation (filter by risk / debt / collateral) | No |
+| `get_moolah_liquidation_quote` | Quote loan-token required for a target seizedAssets OR repaidShares | No |
+| `get_moolah_liquidation_records` | Historical V2 liquidations | No |
+| `approve_liquidator_token` | Approve loan token for PublicLiquidatorProxy | **Yes** |
+| `moolah_liquidate` | Execute a liquidation (seizedAssets OR repaidShares, not both) | **Yes** |
+
+#### JustLend V2 (Moolah) — Dashboard, History & Estimation
+| Tool | Description | Write? |
+|------|-------------|--------|
+| `get_moolah_dashboard` | Aggregated V2 position (vaults + markets + totals) for a user | No |
+| `get_moolah_history` | V2 position curves + recent transactions for a user | No |
+| `get_moolah_records` | Paginated V2 transaction records | No |
+| `get_moolah_vault_history` | Time series of a vault's APY / TVL / mining APY | No |
+| `get_moolah_market_history` | Time series of a market's borrow/supply APY + utilization | No |
+| `estimate_moolah_energy` | Typical energy / bandwidth / TRX cost for any Moolah write op (TRX vs TRC20 routes) | No |
+
+#### Historical Records (V1 + airdrop) — mainnet-only
+| Tool | Description | Write? |
+|------|-------------|--------|
+| `get_lending_records` | V1 supply / withdraw / borrow / repay / collateral history | No |
+| `get_strx_records` | sTRX stake / unstake / withdraw history | No |
+| `get_vote_records` | Governance voting history (distinct from real-time `get_user_vote_status`) | No |
+| `get_energy_rental_records` | Energy rental action history (distinct from on-chain `get_user_energy_rental_orders`) | No |
+| `get_liquidation_records` | V1 liquidation history (distinct from V2 `get_moolah_liquidation_records`) | No |
+| `get_claimable_rewards` | Scan all JustLend merkle airdrop distributors for unclaimed rewards (read-only) | No |
+
 ### Prompts (AI-Guided Workflows)
 
 | Prompt | Description |
 |--------|-------------|
 | `getting_started` | First-time onboarding: wallet setup, connection, feature tour |
-| `supply_assets` | Step-by-step supply with balance checks and approval |
-| `borrow_assets` | Safe borrowing with risk assessment and health factor checks |
-| `repay_borrow` | Guided repayment with verification |
+| `supply_assets` | Step-by-step V1 supply with balance checks and approval |
+| `borrow_assets` | Safe V1 borrowing with risk assessment and health factor checks |
+| `repay_borrow` | Guided V1 repayment with verification |
 | `analyze_portfolio` | Comprehensive portfolio analysis with risk scoring |
 | `compare_markets` | Find best supply/borrow opportunities |
 | `rent_energy` | Guided energy rental with price estimation and balance checks |
 | `stake_trx` | Guided TRX staking to sTRX with APY info and verification |
 | `query_proposals` | Browse and query governance proposals, check voting requirements |
 | `cast_vote` | Guided governance voting with vote verification |
+| `moolah_supply` | **(V2)** Deposit into a Moolah ERC4626 vault with approval flow and APY comparison |
+| `moolah_borrow` | **(V2)** Isolated-market borrow workflow with the `risk` threshold table |
+| `moolah_liquidate` | **(V2)** Find and execute public liquidations; loan-token requirement + approval steps |
+| `moolah_portfolio` | **(V2)** Full V2 portfolio overview with per-market risk assessment |
 
 ## Architecture
 
@@ -413,34 +493,53 @@ npm run dev:http     # HTTP/SSE with auto-reload
 mcp-server-justlend/
 ├── src/
 │   ├── core/
-│   │   ├── chains.ts          # Network configs + JustLend contract addresses
-│   │   ├── abis.ts            # jToken, Comptroller, Oracle, TRC20 ABIs
-│   │   ├── tools/             # MCP tool registrations (59 tools)
-│   │   │   ├── index.ts           # Barrel export
-│   │   │   ├── wallet-tools.ts    # Wallet, network, transfer tools
-│   │   │   ├── market-tools.ts    # Market data, balance, mining tools
-│   │   │   ├── lending-tools.ts   # Supply, borrow, repay, collateral tools
-│   │   │   ├── voting-tools.ts    # Governance proposal & voting tools
-│   │   │   ├── energy-tools.ts    # Energy rental tools
-│   │   │   ├── staking-tools.ts   # sTRX staking tools
-│   │   │   └── shared.ts         # Shared helpers
-│   │   ├── prompts.ts         # AI-guided workflow prompts
+│   │   ├── chains.ts          # Network configs + V1 jTokens + V2 Moolah addresses (mainnet + nile)
+│   │   ├── abis.ts            # jToken, Comptroller, Oracle, TRC20 + 4 Moolah ABIs
+│   │   ├── tools/             # MCP tool registrations (90 tools)
+│   │   │   ├── index.ts                      # Barrel: registers all 10 tool modules
+│   │   │   ├── wallet-tools.ts               # Wallet, network, transfer
+│   │   │   ├── market-tools.ts               # V1 market data, balance, mining
+│   │   │   ├── lending-tools.ts              # V1 supply / borrow / repay / collateral / approve / estimate
+│   │   │   ├── voting-tools.ts               # V1 governance proposals & voting
+│   │   │   ├── energy-tools.ts               # Energy rental
+│   │   │   ├── staking-tools.ts              # sTRX staking
+│   │   │   ├── moolah-vault-tools.ts         # V2 vault (6 tools)
+│   │   │   ├── moolah-market-tools.ts        # V2 market (8 tools)
+│   │   │   ├── moolah-liquidation-tools.ts   # V2 liquidation (5 tools)
+│   │   │   ├── moolah-dashboard-tools.ts     # V2 dashboard + history + estimator (6 tools)
+│   │   │   ├── records-tools.ts              # V1 + airdrop records (6 tools, mainnet-only)
+│   │   │   └── shared.ts                     # Shared helpers
+│   │   ├── prompts.ts         # AI-guided workflow prompts (14: 10 V1-era + 4 V2 Moolah)
 │   │   ├── resources.ts       # Static protocol info resource
 │   │   ├── browser-signer.ts  # tronlink-signer SDK adapter (TronWalletSigner wrapper)
 │   │   └── services/
-│   │       ├── # — JustLend-specific —
+│   │       ├── # — Global + utilities —
 │   │       ├── global.ts     # Global state: network, wallet mode
 │   │       ├── clients.ts    # TronWeb client factory (cached)
 │   │       ├── wallet.ts     # Wallet routing: browser / agent-wallet signing
 │   │       ├── cache.ts      # TTL cache layer (30–60s) for prices, markets, sTRX
+│   │       ├── http.ts       # fetchWithTimeout
+│   │       ├── utils.ts      # toSun/fromSun, formatJson, hexToNumber, isAddress, …
+│   │       ├── bigint-math.ts# BigInt helpers: divRound, formatPercentRatio, USD cent math
+│   │       ├── resource-prices.ts # Energy / bandwidth prices in sun
+│   │       ├── # — JustLend V1 —
 │   │       ├── price.ts      # On-chain Oracle prices with API fallback
 │   │       ├── markets.ts    # APY, TVL, utilization — contract + API fallback
 │   │       ├── account.ts    # User positions via Multicall3 batch queries
-│   │       ├── lending.ts    # supply, borrow, repay, withdraw, collateral
+│   │       ├── lending.ts    # V1 supply / borrow / repay / withdraw / collateral / estimator
 │   │       ├── rewards.ts    # Mining reward calculation (USDD, TRX, WBTC)
 │   │       ├── voting.ts     # JST governance: proposals, cast vote, deposit/withdraw WJST
 │   │       ├── energy-rental.ts # Energy rental: query, calculate, rent, return
 │   │       ├── strx-staking.ts  # sTRX staking: stake, unstake, rewards, withdrawal check
+│   │       ├── records.ts    # V1 + cross-cutting paginated REST history + airdrop scan
+│   │       ├── # — JustLend V2 (Moolah) —
+│   │       ├── moolah-backend.ts    # REST wrapper for zenvora.ablesdxd.link
+│   │       ├── moolah-query.ts      # On-chain view reads (market state, vault totalAssets, health, etc.)
+│   │       ├── moolah-vault.ts      # Vault write ops (deposit / withdraw / redeem / approve)
+│   │       ├── moolah-market.ts     # Market write ops (supply collateral / borrow / repay / composite)
+│   │       ├── moolah-liquidation.ts# liquidate + approveLiquidatorToken
+│   │       ├── moolah-dashboard.ts  # Aggregated dashboard + history helpers
+│   │       ├── moolah-estimate.ts   # Typical energy / bandwidth for all V2 write ops
 │   │       ├── # — General TRON chain —
 │   │       ├── address.ts     # Hex ↔ Base58 conversion, validation
 │   │       ├── balance.ts     # TRX balance (rich), TRC20/TRC1155 balances
@@ -448,13 +547,13 @@ mcp-server-justlend/
 │   │       ├── transactions.ts# getTransaction, getTransactionInfo, waitForTransaction
 │   │       ├── transfer.ts    # transferTRX, transferTRC20, approveTRC20
 │   │       ├── tokens.ts      # TRC20/TRC721/TRC1155 metadata
-│   │       ├── contracts.ts   # readContract, writeContract, multicall, deploy, estimateEnergy
+│   │       ├── contracts.ts   # readContract, writeContract, multicall, estimateEnergy + callValueToSafeNumber
 │   │       ├── multicall-abi.ts # Multicall2 & Multicall3 ABIs
-│   │       ├── staking.ts     # Stake 2.0: freeze, unfreeze, withdrawExpireUnfreeze
-│   │       └── utils.ts       # toSun/fromSun, formatJson, hexToNumber, isAddress, …
+│   │       └── staking.ts     # Stake 2.0: freeze, unfreeze, withdrawExpireUnfreeze
 │   ├── server/
 │   │   ├── server.ts          # MCP server init
-│   │   └── http-server.ts     # Express HTTP/SSE transport
+│   │   ├── http-server.ts     # Express HTTP/SSE transport (uses auth.ts for Bearer check)
+│   │   └── auth.ts            # Constant-time Bearer-token comparison (crypto.timingSafeEqual)
 │   └── index.ts               # Stdio entry point
 ├── bin/cli.js                 # CLI entry for npx
 ├── scripts/
@@ -508,6 +607,11 @@ TEST_TRANSFER=1 npx vitest run tests/core/services/transfer.test.ts
 TEST_STAKING=1 npx vitest run tests/core/services/staking.test.ts
 TEST_ENERGY_RENTAL=1 npx vitest run tests/core/services/energy-rental.test.ts
 TEST_STRX_STAKING=1 npx vitest run tests/core/services/strx-staking.test.ts
+
+# Moolah V2 end-to-end write-path test on nile (vault deposit/withdraw +
+# market supply-collateral/borrow/repay). Requires a funded nile wallet:
+# see forTest/docs/v1.1.0/nile-write-path-runbook.md for the runbook.
+TEST_MOOLAH_WRITE=1 npx vitest run tests/integration/moolah-writes.nile.test.ts
 ```
 
 > **Rate limiting**: Integration tests make real RPC calls to TronGrid. Without `TRONGRID_API_KEY` the free tier limits to a few requests per second. Run test files individually, or set `TRONGRID_API_KEY` to avoid 429 errors.
@@ -567,6 +671,18 @@ TEST_STRX_STAKING=1 npx vitest run tests/core/services/strx-staking.test.ts
 
 **"Can I withdraw my unstaked TRX?"**
 → AI calls `check_strx_withdrawal_eligibility` to check unbonding status and completed withdrawal rounds
+
+**"Deposit 500 USDT into the JustLend V2 vault"** _(Moolah)_
+→ AI uses `moolah_supply` prompt: lists vaults with APY → selects USDT → checks allowance → calls `approve_moolah_vault` → calls `moolah_vault_deposit` → verifies shares via `get_moolah_vault`
+
+**"What's my risk on the TRX→USDT market?"** _(Moolah)_
+→ AI calls `get_moolah_user_position` for the market, interprets the `risk` ratio (0–1 where 1.0 = liquidatable), warns at `>0.85`
+
+**"Find me a liquidation opportunity"** _(Moolah)_
+→ AI calls `get_moolah_pending_liquidations` with `minRiskLevel=1.0` → for a target, calls `get_moolah_liquidation_quote` → estimates profit → if viable, guides through `approve_liquidator_token` + `moolah_liquidate`
+
+**"How much did I supply to JustLend in the last month?"**
+→ AI calls `get_lending_records` paginated and filters action type `1` (supply) from the returned `actionName`
 
 ## License
 

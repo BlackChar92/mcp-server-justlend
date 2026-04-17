@@ -611,8 +611,22 @@ export const JUSTLEND_ADDRESSES: Record<TronNetwork, JustLendAddresses> = {
         underlyingDecimals: 18,
       },
     },
-    // Nile addresses sourced from front-app src/config/v2config.js.
-    // Note: USDD vault is not deployed on nile — only WTRX and USDT vaults exist.
+    // Nile addresses sourced from front-app/src/config/v2config.js (env === 'test').
+    //
+    // ⚠️ Deployment status (verified 2026-04-17 via `wallet/getcontract` on
+    // https://nile.trongrid.io):
+    //   DEPLOYED:     moolahProxy, trxProviderProxy, publicLiquidatorProxy,
+    //                 wtrxProxy, resilientOracleProxy, irmProxy, and the
+    //                 USDT TRC20 underlying at TPYwA...
+    //   NOT DEPLOYED: the two vault addresses (WTRX vault TWxWVx..., USDT
+    //                 vault TXfQWr...). Front-app v2config.js lists them but
+    //                 no bytecode is present on-chain as of this check.
+    //
+    // The vault addresses are kept in the map for forward-compat — when a
+    // nile vault deploys to one of these addresses, no code change is needed.
+    // Until then, any vault-level call on nile will fail at the chain layer.
+    // See forTest/docs/v1.1.0/nile-write-path-runbook.md for the runbook and
+    // tests/integration/moolah-writes.nile.test.ts for an env-gated probe.
     moolah: {
       moolahProxy:           "TFgrgsd8c37ByaZx1YxpBzazJS8bHsoP5c",
       trxProviderProxy:      "TMRZwenUVHPvnxhwDDQLY4SEmmwXvtKRjz",
@@ -622,16 +636,16 @@ export const JUSTLEND_ADDRESSES: Record<TronNetwork, JustLendAddresses> = {
       irmProxy:              "TQYeFiTVNfJ6jfqjyfL2s93VLG1huaMEzC",
       vaults: {
         TRX: {
-          address:            "TWxWVxUv6FvJtWELhLmdKWQRf9eMoVs2ki",
+          address:            "TWxWVxUv6FvJtWELhLmdKWQRf9eMoVs2ki",  // not yet deployed — see note above
           underlyingSymbol:   "TRX",
           underlying:         "",
           underlyingDecimals: 6,
           sharesDecimals:     6,
         },
         USDT: {
-          address:            "TXfQWrF4mkq5XFaoRYv3crdhjiKkhdMEx5",
+          address:            "TXfQWrF4mkq5XFaoRYv3crdhjiKkhdMEx5",  // not yet deployed — see note above
           underlyingSymbol:   "USDT",
-          underlying:         "TPYwAC9Y4uUcT2QH3WPPjqxzJSJWymMoMS",
+          underlying:         "TPYwAC9Y4uUcT2QH3WPPjqxzJSJWymMoMS",  // deployed
           underlyingDecimals: 6,
           sharesDecimals:     6,
         },

@@ -10,6 +10,10 @@ export * from "./voting.js";
 export * from "./energy-rental.js";
 export * from "./strx-staking.js";
 
+// JustLend V2 (Moolah) services
+export * from "./moolah-query.js";
+export * from "./moolah-backend.js";
+
 // General TRON chain services
 export * from "./address.js";
 export * from "./balance.js";

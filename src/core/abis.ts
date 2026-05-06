@@ -717,3 +717,34 @@ export const PUBLIC_LIQUIDATOR_ABI = [
     outputs: [{ type: "uint256" }],
   },
 ];
+
+// ── V2 Merkle Distributor (multi-token mining airdrop) ───────────────────────
+// Each leaf encodes (uint256 index, address account, uint256[] amounts) — slot
+// order matches the round's tokenAddress[] from /v2/getAllUnClaimedAirDrop.
+const MERKLE_V2_CLAIM_TUPLE = [
+  { name: "merkleIndex", type: "uint256"   },
+  { name: "index",       type: "uint256"   },
+  { name: "amounts",     type: "uint256[]" },
+  { name: "merkleProof", type: "bytes32[]" },
+];
+
+export const MERKLE_DISTRIBUTOR_V2_ABI = [
+  {
+    type: "function", name: "multiClaim", stateMutability: "nonpayable",
+    inputs: [{ name: "claims", type: "tuple[]", components: MERKLE_V2_CLAIM_TUPLE }],
+    outputs: [],
+  },
+  {
+    type: "function", name: "merkleRoots", stateMutability: "view",
+    inputs:  [{ name: "merkleIndex", type: "uint256" }],
+    outputs: [{ type: "bytes32" }],
+  },
+  {
+    type: "function", name: "isClaimed", stateMutability: "view",
+    inputs:  [
+      { name: "merkleIndex", type: "uint256" },
+      { name: "index",       type: "uint256" },
+    ],
+    outputs: [{ type: "bool" }],
+  },
+];

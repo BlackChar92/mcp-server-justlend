@@ -618,3 +618,90 @@ export async function fetchMoolahUserRecords(
     total: raw?.totalCount ?? 0,
   };
 }
+
+// ── V2 mining endpoints ──────────────────────────────────────────────────────
+// Mirror the /v2/tronbull, /v2/tronbullish, and /v2/getAllUnClaimedAirDrop
+// endpoints used by useMining.js in the front-app.
+
+/** Per-token APY entry for a vault in /v2/tronbull. */
+export interface MoolahMiningRateEntry {
+  USDDNEW?: string;
+  TRXNEW?:  string;
+  [extra: string]: any;
+}
+
+/** Per-token accruing/settling state for a vault in /v2/tronbullish. */
+export interface MoolahMiningTokenState {
+  gainNew?:           string;
+  gainLast?:          string;
+  price?:             number | string;
+  miningStatus?:      number;        // 1=ongoing, 2=settling, 3=ended
+  currRewardStatus?:  number | string;
+  currEndTime?:       string;
+  [extra: string]: any;
+}
+export type MoolahMiningPoolState = Record<string, MoolahMiningTokenState>;
+
+/** Round-keyed unclaimed merkle airdrop entry from /v2/getAllUnClaimedAirDrop. */
+export interface MoolahAirdropEntry {
+  merkleIndex?:   number;
+  index?:         number;
+  amount?:        string | string[];
+  tokenSymbol?:   string | string[];
+  tokenAddress?:  string | string[];
+  proof?:         string[];
+  claimed?:       boolean;
+  [extra: string]: any;
+}
+
+const joinList = (v: string | string[] | undefined): string | undefined =>
+  Array.isArray(v) ? v.join(",") : v;
+
+/**
+ * Fetch vault mining APY rates. Pass a pool address (or list) to scope the
+ * response; omit both args to receive the full vault → entry map (used by the
+ * dashboard resolver path).
+ */
+export async function fetchV2VaultMiningRates(
+  pools?: string | string[],
+  tvls?:  string | string[],
+  network = "mainnet",
+): Promise<Record<string, MoolahMiningRateEntry>> {
+  const params: Record<string, any> = {};
+  if (pools !== undefined) params.pool = joinList(pools);
+  if (tvls  !== undefined) params.tvl  = joinList(tvls);
+  const raw = await apiGet<any>("/v2/tronbull", params, network);
+  return raw ?? {};
+}
+
+/**
+ * Fetch a user's accruing / settling mining rewards across vaults. Omit
+ * pools to fetch every vault the user has activity in.
+ */
+export async function fetchV2UserMiningState(
+  address: string,
+  pools?: string | string[],
+  network = "mainnet",
+): Promise<Record<string, MoolahMiningPoolState>> {
+  const params: Record<string, any> = { addr: address };
+  if (pools !== undefined) params.pool = joinList(pools);
+  const raw = await apiGet<any>("/v2/tronbullish", params, network);
+  return raw ?? {};
+}
+
+/**
+ * Fetch the user's V2 merkle airdrop rounds. Default `getUnclaimedOnly = true`
+ * matches the front-app behaviour for the rewards card.
+ */
+export async function fetchV2UnclaimedAirdrop(
+  address: string,
+  getUnclaimedOnly: boolean = true,
+  network = "mainnet",
+): Promise<Record<string, MoolahAirdropEntry>> {
+  const raw = await apiGet<any>(
+    "/v2/getAllUnClaimedAirDrop",
+    { addr: address, getUnclaimedOnly },
+    network,
+  );
+  return raw ?? {};
+}

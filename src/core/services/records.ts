@@ -242,10 +242,11 @@ export async function fetchLiquidationRecords(
  * data into multiClaim() once the proof fields are confirmed.
  */
 export interface ClaimableReward {
-  amount?:         string;
+  amount?:         string | string[];
   tokenSymbol?:    string | string[];
   tokenAddress?:   string | string[];
   index?:          number;
+  merkleIndex?:    number;
   merkleProof?:    string[];
   [extra: string]: any;
 }

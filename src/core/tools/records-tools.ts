@@ -121,11 +121,9 @@ export function registerRecordsTools(server: McpServer) {
     "get_claimable_rewards",
     {
       description:
-        "Scan all JustLend merkle airdrop distributors for a user's unclaimed rewards. Returns a map keyed by " +
-        "merkle distributor index; each entry includes the token symbol, address, and amount. " +
-        "Read-only — actually claiming requires per-distributor merkle proofs passed to multiClaim() on-chain " +
-        "(write path deferred until the proof fields are confirmed against a live address with rewards). " +
-        "Mainnet-only.",
+        "Scan all JustLend V1 merkle airdrop distributors for a user's unclaimed rewards. Returns a map keyed by " +
+        "round; each entry includes the merkleIndex, index, amount(s), token symbol/address, and proof. " +
+        "Feed any returned key into claim_v1_mining_period to submit the on-chain multiClaim. Mainnet-only.",
       inputSchema: {
         address: z.string().describe("TRON address. Default: configured wallet"),
         network: z.string().optional().describe("Must be 'mainnet'. Default: mainnet"),
@@ -146,10 +144,55 @@ export function registerRecordsTools(server: McpServer) {
               rewards: res.merkleRewards,
               note: count === 0
                 ? "No claimable rewards found for this address."
-                : "Use the returned amounts/proofs to build multiClaim() calls against the appropriate distributors.",
+                : "Pass any of the returned keys to claim_v1_mining_period to submit the multiClaim transaction.",
             }, null, 2),
           }],
         };
+      } catch (error: any) {
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+      }
+    },
+  );
+
+  server.registerTool(
+    "claim_v1_mining_period",
+    {
+      description:
+        "Claim a single V1 mining airdrop round via multiClaim() on the appropriate merkle distributor. " +
+        "Pass `key` from get_claimable_rewards (preferred) or supply merkleIndex / index / amount / proof directly. " +
+        "Routing matches the front-app: amount[] → multi-merkle distributor (multi-token leaf); single + USDD → " +
+        "USDDNEW distributor; single + other → main distributor. Mainnet-only.",
+      inputSchema: {
+        key:          z.string().optional().describe("Round key from get_claimable_rewards (preferred)"),
+        merkleIndex:  z.union([z.string(), z.number()]).optional().describe("Override: merkle tree index"),
+        index:        z.union([z.string(), z.number()]).optional().describe("Override: leaf index inside the tree"),
+        amount:       z.union([z.string(), z.number(), z.array(z.union([z.string(), z.number()]))]).optional().describe("Override: token amount(s) in raw units; pass an array for multi-token leaves"),
+        proof:        z.array(z.string()).optional().describe("Override: merkle proof (bytes32[])"),
+        tokenAddress: z.union([z.string(), z.array(z.string())]).optional().describe("Override: token address(es) used for routing when the entry is single-token"),
+        tokenSymbol:  z.union([z.string(), z.array(z.string())]).optional().describe("Override: token symbol(s); useful when tokenAddress is missing"),
+        distributor:  z.string().optional().describe("Force a specific distributor address. Set with `selector` to bypass routing."),
+        selector:     z.enum(["single", "multi"]).optional().describe("Force a selector. 'single' = (uint256,uint256,uint256,bytes32[])[]; 'multi' = (uint256,uint256,uint256[],bytes32[])[]"),
+        address:      z.string().optional().describe("Owner address used to refetch the airdrop entry when key is supplied. Default: signing wallet"),
+        network:      z.string().optional().describe("Network. Default: mainnet"),
+      },
+      annotations: { title: "Claim V1 Mining Period", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ key, merkleIndex, index, amount, proof, tokenAddress, tokenSymbol, distributor, selector, address, network = services.getGlobalNetwork() }) => {
+      try {
+        const res = await services.claimV1MiningPeriod({
+          key,
+          merkleIndex,
+          index,
+          amount,
+          proof,
+          tokenAddress,
+          tokenSymbol,
+          distributor,
+          selector,
+          address,
+          network,
+        });
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
       } catch (error: any) {
         return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }

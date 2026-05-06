@@ -515,6 +515,14 @@ describe("Tool Registration", () => {
       "stake_trx_to_strx",
       "unstake_strx",
       "claim_strx_rewards",
+      // V1 merkle airdrop claim
+      "claim_v1_mining_period",
+      // V2 (Moolah) mining
+      "get_moolah_vault_mining_apy",
+      "get_moolah_mining_resolver",
+      "get_moolah_mining_accruing",
+      "get_moolah_pending_mining_periods",
+      "claim_moolah_mining_period",
     ];
 
     for (const name of expectedTools) {

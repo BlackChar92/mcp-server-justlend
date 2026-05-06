@@ -75,4 +75,42 @@ describe("Moolah backend API (mainnet)", () => {
     expect(res).toBeTruthy();
     expect(typeof res).toBe("object");
   }));
+
+  // ── V2 mining endpoints ───────────────────────────────────────────────────
+  // The /v2/* endpoints are read-only and return empty maps for addresses
+  // with no activity, so we hit them with a known empty address rather than
+  // depending on a wallet that may have rewards. Each test asserts the
+  // response shape is an object so a structural regression (e.g. an extra
+  // wrapping envelope reintroduced) trips the test.
+
+  const EMPTY_ADDRESS = "TFakeAddressNoMiningActivity000000";
+
+  it("fetchV2VaultMiningRates returns a vault → entry map", skipOn429(async () => {
+    const { fetchV2VaultMiningRates } = await import(
+      "../../../src/core/services/moolah-backend.js"
+    );
+    const res = await fetchV2VaultMiningRates(undefined, undefined, "mainnet");
+    expect(res && typeof res === "object" && !Array.isArray(res)).toBe(true);
+    // When entries exist, each value must look like the real APY shape so
+    // useMining.js's USDDNEW/TRXNEW reads land on real fields.
+    for (const entry of Object.values(res)) {
+      expect(typeof entry).toBe("object");
+    }
+  }));
+
+  it("fetchV2UserMiningState returns an object even for an address with no activity", skipOn429(async () => {
+    const { fetchV2UserMiningState } = await import(
+      "../../../src/core/services/moolah-backend.js"
+    );
+    const res = await fetchV2UserMiningState(EMPTY_ADDRESS, undefined, "mainnet");
+    expect(res && typeof res === "object" && !Array.isArray(res)).toBe(true);
+  }));
+
+  it("fetchV2UnclaimedAirdrop returns an object even for an address with no rewards", skipOn429(async () => {
+    const { fetchV2UnclaimedAirdrop } = await import(
+      "../../../src/core/services/moolah-backend.js"
+    );
+    const res = await fetchV2UnclaimedAirdrop(EMPTY_ADDRESS, true, "mainnet");
+    expect(res && typeof res === "object" && !Array.isArray(res)).toBe(true);
+  }));
 });

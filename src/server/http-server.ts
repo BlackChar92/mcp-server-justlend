@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import { timingSafeEqual } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import startServer from "./server.js";
@@ -43,11 +44,16 @@ async function main() {
   // H-3: Body size limit
   app.use(express.json({ limit: "1mb" }));
 
-  // H-1: API key authentication
+  // H-1: API key authentication (constant-time comparison to avoid timing side-channels)
+  const expectedAuth = Buffer.from(`Bearer ${API_KEY}`);
   app.use((req, res, next) => {
     if (req.path === "/health") return next();
-    const auth = req.headers.authorization;
-    if (auth !== `Bearer ${API_KEY}`) {
+    const provided = req.headers.authorization ?? "";
+    const providedBuf = Buffer.from(provided);
+    const ok =
+      providedBuf.length === expectedAuth.length &&
+      timingSafeEqual(providedBuf, expectedAuth);
+    if (!ok) {
       res.status(401).json({ error: "Unauthorized" });
       return;
     }

@@ -6,6 +6,35 @@ import { waitForTransaction } from "./transactions.js";
 import { utils } from "./utils.js";
 
 /**
+ * Convert a callValue (string | number | bigint) to the Number that TronWeb's
+ * trigger* APIs accept. Throws if the value exceeds Number.MAX_SAFE_INTEGER —
+ * Sun precision would otherwise be silently lost because BigInt → Number rounds
+ * to the nearest double, and the broadcasted callValue would not match input.
+ */
+export function toSafeCallValueNumber(
+  value: string | number | bigint | undefined | null,
+): number {
+  if (value === undefined || value === null || value === "") return 0;
+  let big: bigint;
+  try {
+    big = typeof value === "bigint" ? value : BigInt(value);
+  } catch {
+    throw new Error(`Invalid callValue ${String(value)} (not a valid integer).`);
+  }
+  if (big < 0n) {
+    throw new Error(`callValue cannot be negative (got ${big.toString()}).`);
+  }
+  if (big > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error(
+      `callValue ${big.toString()} exceeds the SDK safe-integer limit ` +
+      `(${Number.MAX_SAFE_INTEGER} Sun ≈ ${Number.MAX_SAFE_INTEGER / 1e6} TRX). ` +
+      `Reduce the amount or split into multiple calls.`,
+    );
+  }
+  return Number(big);
+}
+
+/**
  * Read from a smart contract (view/pure functions).
  */
 export async function readContract(
@@ -43,7 +72,7 @@ export async function writeContract(
     address: string;
     functionName: string;
     args?: any[];
-    value?: string; // TRX call value in Sun
+    value?: string | number | bigint; // TRX call value in Sun
     abi?: any[];
   },
   network = "mainnet",
@@ -72,7 +101,9 @@ export async function writeContract(
     }));
 
     const options: any = {};
-    if (params.value) options.callValue = Number(params.value);
+    if (params.value !== undefined && params.value !== null && params.value !== "") {
+      options.callValue = toSafeCallValueNumber(params.value);
+    }
 
     const tx = await tronWeb.transactionBuilder.triggerSmartContract(
       params.address,
@@ -99,7 +130,7 @@ export interface SafeSendParams {
   abi: any[];
   functionName: string;
   args?: any[];
-  callValue?: string | number;
+  callValue?: string | number | bigint;
   feeLimit?: number;
 }
 
@@ -117,7 +148,10 @@ export async function safeSend(
   if (!ownerAddress) throw new Error("Wallet not configured");
 
   const args = params.args || [];
-  const hasCallValue = params.callValue && Number(params.callValue) > 0;
+  // Validate callValue once up-front: throws on values that exceed the SDK's
+  // safe-integer range, so we don't silently truncate large TRX amounts.
+  const callValueNum = toSafeCallValueNumber(params.callValue);
+  const hasCallValue = callValueNum > 0;
   const isNativeTRXCall = hasCallValue && args.length === 0;
 
   // 1. Simulate and get energy requirement
@@ -254,7 +288,7 @@ export async function safeSend(
     const options: any = {
       feeLimit: params.feeLimit || 1_000_000_000,
     };
-    if (params.callValue) options.callValue = Number(params.callValue);
+    if (hasCallValue) options.callValue = callValueNum;
 
     const tx = await tronWeb.transactionBuilder.triggerSmartContract(
       params.address,
@@ -561,7 +595,7 @@ export async function estimateEnergy(
     functionName: string;
     args?: any[];
     abi: any[];
-    callValue?: string | number;
+    callValue?: string | number | bigint;
     ownerAddress?: string;
   },
   network = "mainnet",
@@ -578,6 +612,9 @@ export async function estimateEnergy(
 
     const normalizedAbi = parseABI(params.abi);
     const args = params.args || [];
+    // Validate callValue once: rejects values above Number.MAX_SAFE_INTEGER so
+    // simulation matches the broadcast that safeSend will eventually do.
+    const callValueNum = toSafeCallValueNumber(params.callValue);
 
     const candidates = normalizedAbi.filter(
       (item) => item.type === "function" && item.name === params.functionName,
@@ -587,7 +624,7 @@ export async function estimateEnergy(
     const matched = candidates.filter((item) => (item.inputs || []).length === args.length);
 
     // Native-TRX zero-arg + callValue degrade path.
-    if (matched.length === 0 && args.length === 0 && params.callValue && Number(params.callValue) > 0) {
+    if (matched.length === 0 && args.length === 0 && callValueNum > 0) {
       // No zero-arg overload in the ABI, but this is a native-TRX call (value passed
       // via callValue). Bypass ABI matching and call triggerConstantContract with
       // the zero-arg signature directly.
@@ -596,7 +633,7 @@ export async function estimateEnergy(
         const result = await tronWeb.transactionBuilder.triggerConstantContract(
           params.address,
           signature,
-          { callValue: Number(params.callValue) },
+          { callValue: callValueNum },
           [],
           ownerAddress,
         );
@@ -667,7 +704,7 @@ export async function estimateEnergy(
     const result = await tronWeb.transactionBuilder.triggerConstantContract(
       params.address,
       signature,
-      params.callValue ? { callValue: Number(params.callValue) } : {},
+      callValueNum > 0 ? { callValue: callValueNum } : {},
       typedParams,
       ownerAddress,
     );

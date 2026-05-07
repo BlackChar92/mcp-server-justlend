@@ -17,7 +17,7 @@ const sendRawTransaction = vi.fn();
 const triggerSmartContract = vi.fn();
 const triggerConstantContract = vi.fn();
 
-const fakeTronWeb = {
+const mockTronWeb = {
   defaultAddress: { base58: "TWALLETAAAAAAAAAAAAAAAAAAAAAAAAAAAA" },
   trx: {
     getAccountResources: vi.fn().mockResolvedValue({
@@ -38,11 +38,11 @@ const fakeTronWeb = {
 };
 
 vi.mock("../../../src/core/services/clients.js", () => ({
-  getTronWeb: vi.fn(() => fakeTronWeb),
+  getTronWeb: vi.fn(() => mockTronWeb),
 }));
 
 vi.mock("../../../src/core/services/wallet.js", () => ({
-  getSigningClient: vi.fn(async () => fakeTronWeb),
+  getSigningClient: vi.fn(async () => mockTronWeb),
   signTransactionWithWallet: vi.fn(async (tx: any) => ({ ...tx, signature: ["0xsig"] })),
 }));
 

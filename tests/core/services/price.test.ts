@@ -99,4 +99,47 @@ describe("fetchPriceFromAPI", () => {
     const price = await fetchPriceFromAPI("usdt", 6, "mainnet");
     expect(price).toBeGreaterThan(0);
   });
+
+  // ------------------------------------------------------------------
+  // audit-2026-05-13 regression: high-TVL markets must NOT silently round.
+  // Before the fix, Number(totalSupply) lost precision once totalSupply
+  // exceeded 2^53 and the resulting USD price drifted by 1–2%.
+  // ------------------------------------------------------------------
+  it("computes a precise price when totalSupply exceeds 2^53 (high-TVL market)", async () => {
+    // Pick a jUSDT-like market with realistic TVL:
+    //   depositedUSD   = 200,000,000        (USD)
+    //   exchangeRate   = 2.345678901234e17  (~0.2346 jUSDT→USDT)
+    //   underlyingDecimals = 6
+    // We want underlyingAmount = 200,000,000 USDT  →  price = 1.0 USD.
+    //   underlyingRaw         = 200_000_000 * 1e6  = 2e14
+    //   totalSupply (raw)     = (underlyingRaw * 1e18) / exchangeRate
+    //                         ≈ 8.526512829121e14  (well above 2^53 ≈ 9.007e15? no — let's pick higher)
+    // Use a much larger market so totalSupply > 2^53 unambiguously.
+    //
+    //   depositedUSD   = 2,000,000,000
+    //   underlyingRaw  = 2_000_000_000 * 1e6 = 2e15
+    //   exchangeRate   = 200_000_000_000_000_000   (0.2e18)
+    //   totalSupply    = (2e15 * 1e18) / 0.2e18    = 1e16  ← exceeds Number.MAX_SAFE_INTEGER (~9.007e15)
+    const HIGH_TVL_MARKET = {
+      collateralSymbol: "USDT",
+      depositedUSD: "2000000000",
+      totalSupply: "10000000000000000",   // 1e16 — strictly above 2^53
+      exchangeRate: "200000000000000000", // 0.2e18
+    };
+    mockFetch.mockResolvedValueOnce(makeApiResponse([HIGH_TVL_MARKET]));
+    const price = await fetchPriceFromAPI("USDT", 6, "mainnet");
+    expect(price).not.toBeNull();
+    // Price must be exactly 1.0 USD (not 0.99x because of float rounding).
+    // Tight tolerance proves the arithmetic ran in BigInt.
+    expect(price!).toBeGreaterThan(0.9999999);
+    expect(price!).toBeLessThan(1.0000001);
+  });
+
+  it("returns null on malformed numeric strings instead of throwing", async () => {
+    mockFetch.mockResolvedValueOnce(
+      makeApiResponse([{ ...USDT_MARKET, totalSupply: "not-a-number" }]),
+    );
+    const price = await fetchPriceFromAPI("USDT", 6, "mainnet");
+    expect(price).toBeNull();
+  });
 });

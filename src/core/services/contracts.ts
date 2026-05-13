@@ -6,6 +6,45 @@ import { waitForTransaction } from "./transactions.js";
 import { utils } from "./utils.js";
 
 /**
+ * Typed shape of `tronWeb.trx.sendRawTransaction` responses. TronWeb's types are
+ * incomplete and historically the success indicator has lived under both `result`
+ * and `transaction.txID`. Funnel every call site through this interface so a
+ * future SDK rename surfaces as a compile error, not a silent broadcast failure.
+ */
+export interface BroadcastResponse {
+  result?: boolean;
+  txid?: string;
+  message?: string;
+  code?: string | number;
+  transaction?: { txID?: string };
+}
+
+/**
+ * Resolve a broadcast result to either a txID or a decoded error message.
+ * Centralises the "did the node accept it?" check that used to be `(broadcast as any).result`.
+ */
+export function resolveBroadcastResult(broadcast: BroadcastResponse, fallbackTxID?: string): { txID: string } {
+  if (broadcast.result) {
+    const txID = broadcast.txid || broadcast.transaction?.txID || fallbackTxID;
+    if (!txID) throw new Error("Broadcast succeeded but no txID was returned.");
+    return { txID };
+  }
+  const decodedMessage = broadcast.message
+    ? safeDecodeHexMessage(broadcast.message)
+    : JSON.stringify(broadcast);
+  throw new Error(`Broadcast failed: ${decodedMessage}`);
+}
+
+function safeDecodeHexMessage(msg: string): string {
+  try {
+    if (/^[0-9a-fA-F]+$/.test(msg) && msg.length % 2 === 0) {
+      return Buffer.from(msg, "hex").toString();
+    }
+  } catch { /* fall through */ }
+  return msg;
+}
+
+/**
  * Convert a callValue (string | number | bigint) to the Number that TronWeb's
  * trigger* APIs accept. Throws if the value exceeds Number.MAX_SAFE_INTEGER —
  * Sun precision would otherwise be silently lost because BigInt → Number rounds
@@ -114,12 +153,9 @@ export async function writeContract(
     );
 
     const signed = await signTransactionWithWallet(tx.transaction, undefined, network);
-    const broadcast = await tronWeb.trx.sendRawTransaction(signed);
-
-    if (broadcast.result) {
-      return broadcast.txid || broadcast.transaction?.txID || tx.transaction.txID;
-    }
-    throw new Error(`Broadcast failed: ${JSON.stringify(broadcast)}`);
+    const broadcast = (await tronWeb.trx.sendRawTransaction(signed)) as BroadcastResponse;
+    const { txID } = resolveBroadcastResult(broadcast, tx.transaction.txID);
+    return txID;
   } catch (error: any) {
     throw new Error(`Write contract failed: ${error.message}`);
   }
@@ -299,15 +335,9 @@ export async function safeSend(
     );
 
     const signed = await signTransactionWithWallet(tx.transaction, undefined, network);
-    const broadcast = await tronWeb.trx.sendRawTransaction(signed);
-
-    if (broadcast.result) {
-      const txID = broadcast.txid || broadcast.transaction?.txID || tx.transaction.txID;
-      return { txID, message: "Transaction broadcasted successfully" };
-    } else {
-      const errorMsg = broadcast.message ? Buffer.from(broadcast.message, "hex").toString() : JSON.stringify(broadcast);
-      throw new Error(`Broadcast failed: ${errorMsg}`);
-    }
+    const broadcast = (await tronWeb.trx.sendRawTransaction(signed)) as BroadcastResponse;
+    const { txID } = resolveBroadcastResult(broadcast, tx.transaction.txID);
+    return { txID, message: "Transaction broadcasted successfully" };
   } catch (error: any) {
     throw new Error(`Transaction failed during broadcast: ${error.message}`);
   }
@@ -551,10 +581,10 @@ export async function deployContract(
       tronWeb.defaultAddress.hex as string,
     );
     const signedTx = await signTransactionWithWallet(transaction, undefined, network);
-    const result = await tronWeb.trx.sendRawTransaction(signedTx);
+    const broadcast = (await tronWeb.trx.sendRawTransaction(signedTx)) as BroadcastResponse;
 
-    if (result && result.result) {
-      const txID = result.transaction.txID;
+    if (broadcast && broadcast.result) {
+      const txID = broadcast.transaction?.txID ?? transaction.txID;
       const info = await waitForTransaction(txID, network);
 
       if (info.receipt?.result && info.receipt.result !== "SUCCESS") {
@@ -580,7 +610,7 @@ export async function deployContract(
       return { txID, contractAddress, message: "Contract deployment successful" };
     }
 
-    throw new Error(`Broadcast failed: ${JSON.stringify(result)}`);
+    throw new Error(`Broadcast failed: ${JSON.stringify(broadcast)}`);
   } catch (error: any) {
     throw new Error(`Deploy contract failed: ${error.message}`);
   }

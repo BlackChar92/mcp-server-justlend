@@ -142,4 +142,35 @@ describe("fetchPriceFromAPI", () => {
     const price = await fetchPriceFromAPI("USDT", 6, "mainnet");
     expect(price).toBeNull();
   });
+
+  // Regression: the JustLend API serialises very large `exchangeRate` values as
+  // raw JSON numbers, and once those exceed 1e21 JS stringifies them in scientific
+  // notation. The old normalizeDecimalString → split(".")[0] path turned
+  // "1.02e+26" into "1", which silently corrupted prices; the eventually-returned
+  // huge price then made `getAccountSummary`'s `priceNumberToRaw` round-trip
+  // through `toFixed(18)` → sci notation → parseUnits and throw with the message
+  // we surfaced in the user-visible error. Asserting the function does not throw
+  // — and produces a sane price — locks both ends of that chain.
+  it("does not throw when exchangeRate arrives as a sci-notation number (high-TVL market)", async () => {
+    // SUN-like market on mainnet: exchangeRate of 1.0279569798944131e+26 is the
+    // exact value that triggered the original bug. totalSupply chosen to give a
+    // ~$1 price so we can assert sanity rather than guessing the exact value.
+    //
+    //   underlyingRaw = totalSupplyRaw * exchangeRate / 1e18
+    //                 = 1e18 * 1.02795697989e26 / 1e18 = 1.02795697989e26
+    //   price         = depositedUSD / (underlyingRaw / 1e18)
+    //                 ≈ 1.02795697989e26 / 1.02795697989e26 = ~1.0
+    const SCI_MARKET = {
+      collateralSymbol: "SCITEST",
+      depositedUSD: "1.0279569798944131e+8",
+      totalSupply: "1000000000000000000",       // 1e18 — well above 2^53
+      exchangeRate: 1.0279569798944131e+26,      // JSON-deserialised number, not string
+    };
+    mockFetch.mockResolvedValueOnce(makeApiResponse([SCI_MARKET]));
+    const price = await fetchPriceFromAPI("SCITEST", 18, "mainnet");
+    expect(price).not.toBeNull();
+    expect(Number.isFinite(price!)).toBe(true);
+    expect(price!).toBeGreaterThan(0);
+    expect(price!).toBeLessThan(10); // sanity bound — not a runaway 1e24 value
+  });
 });

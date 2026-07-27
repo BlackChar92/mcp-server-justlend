@@ -37,7 +37,7 @@ Beyond JustLend-specific operations, the server also exposes a full set of **gen
 - **Collateral Management**: Enter/exit markets, manage what counts as collateral
 - **Portfolio Analysis**: AI-guided risk assessment, health factor monitoring, optimization
 - **JST Voting / Governance**: View proposals, cast votes, deposit/withdraw JST for voting power, reclaim votes
-- **Energy Rental**: Rent energy from JustLend, calculate rental prices, query rental orders, return/cancel rentals
+- **Energy Rental + Direct Purchase**: Rent energy on-chain, or query/quote/buy energy through the separately configured direct-purchase service
 - **sTRX Staking**: Stake TRX to receive sTRX, unstake sTRX, claim staking rewards, check withdrawal eligibility
   - Precision-safe BigInt/string math for TRX Sun conversion and 18-decimal sTRX balances/exchange-rate display
 
@@ -183,6 +183,31 @@ export AGENT_WALLET_PASSWORD="your_wallet_password"
 # Strongly recommended — avoids TronGrid 429 rate limiting on mainnet
 export TRONGRID_API_KEY="your_trongrid_api_key"
 ```
+
+### Energy direct-purchase API
+
+Direct purchase is fail-closed and has no built-in production URL or economic defaults. Configure the
+separately deployed API explicitly. Until the official production hostname is added to the allowlist,
+custom/test endpoints also require an explicit trust opt-in:
+
+```bash
+export JUSTLEND_ENERGY_API_URL="https://energy-api.example"
+export JUSTLEND_ALLOW_UNTRUSTED_HOSTS=1 # temporary/custom endpoints only
+```
+
+Recommended tool sequence:
+
+1. `get_energy_purchase_config` — load live limits, durations, prices, and pool capacity.
+2. `quote_energy_purchase` — obtain an authoritative read-only quote.
+3. Show the exact payer, receivers, duration, and TRX amount to the user.
+4. `buy_energy_direct` — set `confirmPayment=true` only after explicit user confirmation.
+5. `get_energy_purchase_order` or `get_energy_purchase_history` — track the result.
+
+The server signs the native TRX payment but never broadcasts it locally. The configured backend
+validates and may broadcast the signed transaction. Ambiguous submissions retry only the same signed
+transaction, and public transaction identifiers—not signed payloads—are stored with `0600` permissions
+under `~/.mcp-server-justlend/energy-payment-risks.json`. Use `get_energy_payment_risk` before any new
+payment when a previous result is uncertain.
 
 ### Client Configuration
 
@@ -346,7 +371,7 @@ The full, authoritative per-tool catalog — every tool's input schema, side-eff
 | Market Data | 13 | per-market & protocol APY/TVL/rates (contract query + API fallback) |
 | Lending Operations | 10 | supply / borrow / repay / withdraw / collateral / approve (V1 jTokens) |
 | JST Voting / Governance | 10 | proposals, vote status, WJST approve / vote / withdraw |
-| Energy Rental | 9 | rental dashboard, price estimate, rent / return energy |
+| Energy | 15 | rental dashboard and writes; direct-purchase config, quote, order/history/risk, confirmed buy |
 | sTRX Staking | 7 | sTRX dashboard & account, stake / unstake / claim / withdraw |
 | WTRX Wrap / Unwrap | 2 | `wrap_trx` (TRX→WTRX 1:1) / `unwrap_trx` (WTRX→TRX 1:1) |
 | JustLend V2 (Moolah) — Vaults | 6 | ERC4626 vault read + deposit / withdraw / redeem / approve |
@@ -373,7 +398,7 @@ mcp-server-justlend/
 │   │   │   ├── market-tools.ts               # V1 market data, balance, mining
 │   │   │   ├── lending-tools.ts              # V1 supply / borrow / repay / collateral / approve / estimate
 │   │   │   ├── voting-tools.ts               # V1 governance proposals & voting
-│   │   │   ├── energy-tools.ts               # Energy rental
+│   │   │   ├── energy-tools.ts               # Energy rental + direct purchase
 │   │   │   ├── staking-tools.ts              # sTRX staking
 │   │   │   ├── moolah-vault-tools.ts         # V2 vault (6 tools)
 │   │   │   ├── moolah-market-tools.ts        # V2 market (8 tools)
@@ -402,6 +427,7 @@ mcp-server-justlend/
 │   │       ├── rewards.ts    # Mining reward calculation (USDD, TRX, WBTC)
 │   │       ├── voting.ts     # JST governance: proposals, cast vote, deposit/withdraw WJST
 │   │       ├── energy-rental.ts # Energy rental: query, calculate, rent, return
+│   │       ├── energy-purchase.ts # Explicit API client, sign-only payment, idempotent submit, risk recovery
 │   │       ├── strx-staking.ts  # sTRX staking: stake, unstake, rewards, withdrawal check
 │   │       ├── records.ts    # V1 + cross-cutting paginated REST history + airdrop scan
 │   │       ├── # — JustLend V2 (Moolah) —

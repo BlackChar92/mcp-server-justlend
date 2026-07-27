@@ -4,9 +4,9 @@
 >
 > Lets an AI agent plan tool routing offline without connecting to the server. Side-effect classes align with the AI-Agent documentation standard baseline (Safe / Network Read / Remote Write / Destructive).
 
-**Total tools**: 98  |  **Protocol**: MCP  |  **Transport**: stdio / HTTP(SSE)
+**Total tools**: 104  |  **Protocol**: MCP  |  **Transport**: stdio / HTTP(SSE)
 
-**Read-only tools**: 58  |  **Write tools**: 40 (of which marked destructive: 27)
+**Read-only tools**: 63  |  **Write tools**: 41 (of which marked destructive: 28)
 
 > ⚠️ Tools marked 🔴 **sign and broadcast TRON transactions that move real assets** — the client MUST require human confirmation (HITL) before executing. 🟡 tools only change local wallet/network config or start an interaction. Private keys are managed encrypted by `@bankofai/agent-wallet` or signed via the TronLink browser wallet, and are **never passed as tool arguments**.
 
@@ -524,7 +524,80 @@
 | `proposalId` | number | ✅ |  | The proposal ID to withdraw votes from |
 | `network` | string | — |  | Network. Default: mainnet |
 
-## Energy Rental (9)
+## Energy Rental (15)
+
+### `get_energy_purchase_config`
+
+**Energy Purchase Config**  
+- **Side effect**: 🟢 Read-only (Safe / Network Read)
+- **annotations**: idempotent: true · openWorld: true
+- **Description**: Get live energy direct-purchase limits, supported durations, current unit prices, and pool capacity. Requires JUSTLEND_ENERGY_API_URL; there is intentionally no production URL or economic fallback.
+- **Params**: none
+
+### `quote_energy_purchase`
+
+**Quote Energy Purchase**  
+- **Side effect**: 🟢 Read-only (Safe / Network Read)
+- **annotations**: idempotent: true · openWorld: true
+- **Description**: Get an authoritative, read-only quote for direct energy purchase. It does not create an order, sign, broadcast, or reserve funds. Limits and resource-pool exclusions are validated against live config.
+
+| Param | Type | Required | Default | Description |
+|-------|------|:--------:|---------|-------------|
+| `receiverAddresses` | string[] | ✅ |  | One or more energy receiver addresses |
+| `energyPerReceiver` | number (min 0, max 9007199254740991) | ✅ |  | Energy amount for each receiver |
+
+### `get_energy_purchase_order`
+
+**Energy Purchase Order**  
+- **Side effect**: 🟢 Read-only (Safe / Network Read)
+- **annotations**: idempotent: true · openWorld: true
+- **Description**: Get the current lifecycle state and delivery details for an energy purchase order.
+
+| Param | Type | Required | Default | Description |
+|-------|------|:--------:|---------|-------------|
+| `orderId` | union | ✅ |  | Energy purchase order id |
+| `orderToken` | string (min len 1) | — |  | Optional X-Consumer-Order-Token returned when the order was accepted |
+
+### `get_energy_purchase_history`
+
+**Energy Purchase History**  
+- **Side effect**: 🟢 Read-only (Safe / Network Read)
+- **annotations**: idempotent: true · openWorld: true
+- **Description**: Get settled energy direct-purchase history for a payer address.
+
+| Param | Type | Required | Default | Description |
+|-------|------|:--------:|---------|-------------|
+| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | Payer address. Default: configured wallet |
+| `page` | number (min 0) | — |  | Page number, 1-based. Default: 1 |
+| `pageSize` | number (min 0, max 100) | — |  | Rows per page. Default: 20 |
+
+### `get_energy_payment_risk`
+
+**Energy Payment Risk**  
+- **Side effect**: 🟢 Read-only (Safe / Network Read)
+- **annotations**: idempotent: true · openWorld: true
+- **Description**: Reconcile and return unresolved direct-purchase payment risks. If any result remains, do not sign a new payment.
+
+| Param | Type | Required | Default | Description |
+|-------|------|:--------:|---------|-------------|
+| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | Payer address. Default: configured wallet |
+| `network` | string | — |  | Network used to query the payment transaction. Default: configured network |
+
+### `buy_energy_direct`
+
+**Buy Energy Direct**  
+- **Side effect**: 🔴 On-chain write · high-risk (Remote Write / Destructive) — signs and broadcasts a TRON transaction moving real assets; the client MUST require human confirmation (HITL) before executing
+- **annotations**: idempotent: false · openWorld: true
+- **Description**: VALUE-MOVING OPERATION. Buy energy by signing a native TRX payment. The MCP server never broadcasts the payment locally; the configured energy service validates and may broadcast it. Call quote_energy_purchase first, show the payer, receivers, duration, and exact TRX amount to the user, and set confirmPayment=true only after the user explicitly confirms. Ambiguous submissions retry only the same signed transaction and block a new payment.
+
+| Param | Type | Required | Default | Description |
+|-------|------|:--------:|---------|-------------|
+| `receiverAddresses` | string[] | ✅ |  | One or more energy receiver addresses |
+| `energyPerReceiver` | number (min 0, max 9007199254740991) | ✅ |  | Energy amount for each receiver |
+| `duration` | string (min len 1) | ✅ |  | Duration exactly as advertised by get_energy_purchase_config |
+| `expectedAmountSun` | number (min 0, max 9007199254740991) | ✅ |  | Exact amount_sun from the quote explicitly confirmed by the user |
+| `confirmPayment` | literal | ✅ |  | Must be true only after the user explicitly confirms this value-moving payment |
+| `network` | string | — |  | Signing network. Default: configured network |
 
 ### `get_energy_rental_dashboard`
 

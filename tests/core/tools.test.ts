@@ -350,6 +350,22 @@ vi.mock("../../src/core/services/index.js", () => ({
     refundedDeposit: 200,
   })),
 
+  // Energy Direct Purchase
+  getEnergyPurchaseConfig: vi.fn(async () => ({
+    config: { min_energy: 65000, max_energy: 5000000, max_receivers: 50, durations: ["1h"] },
+    price: { unit_price_sun: 37 },
+    pool: { available_energy: 10000000 },
+  })),
+  quoteEnergyPurchase: vi.fn(async () => ({
+    amount_sun: 2405000,
+    pay_address: "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb",
+    can_fulfill: true,
+  })),
+  getEnergyPurchaseOrder: vi.fn(async () => ({ id: 7, state: "delivered" })),
+  getEnergyPurchaseHistory: vi.fn(async () => ({ rows: [], total: 0 })),
+  getEnergyPaymentRisks: vi.fn(async () => []),
+  buyEnergyDirect: vi.fn(async () => ({ ok: true, orderId: 7, txHash: "payment_tx", state: "delivered" })),
+
   // sTRX Staking
   getStrxDashboard: vi.fn(async () => ({
     trxPrice: 0.12,
@@ -508,6 +524,13 @@ describe("Tool Registration", () => {
       "get_return_rental_info",
       "rent_energy",
       "return_energy_rental",
+      // Energy Direct Purchase
+      "get_energy_purchase_config",
+      "quote_energy_purchase",
+      "get_energy_purchase_order",
+      "get_energy_purchase_history",
+      "get_energy_payment_risk",
+      "buy_energy_direct",
       // sTRX Staking
       "get_strx_dashboard",
       "get_strx_account",
@@ -556,6 +579,11 @@ describe("Tool Registration", () => {
       "check_allowance",
       "get_trx_balance",
       "get_token_balance",
+      "get_energy_purchase_config",
+      "quote_energy_purchase",
+      "get_energy_purchase_order",
+      "get_energy_purchase_history",
+      "get_energy_payment_risk",
     ];
     for (const name of readOnlyTools) {
       const tool = registeredTools.get(name);
@@ -571,6 +599,7 @@ describe("Tool Registration", () => {
       "borrow",
       "repay",
       "exit_market",
+      "buy_energy_direct",
     ];
     for (const name of destructiveTools) {
       const tool = registeredTools.get(name);
@@ -1024,6 +1053,53 @@ describe("Energy Rental Tools", () => {
       "receiver",
       "mainnet",
     );
+  });
+});
+
+describe("Energy Direct Purchase Tools", () => {
+  const receiver = "TVjsyZ7fYF3qLF6BQgPmTEZy1xrNNyVAAA";
+
+  it("returns live purchase config without a wallet write", async () => {
+    const result = await callTool("get_energy_purchase_config");
+    const output = getToolOutput(result);
+    expect(output.config.durations).toEqual(["1h"]);
+    expect(services.getEnergyPurchaseConfig).toHaveBeenCalled();
+  });
+
+  it("returns an authoritative read-only quote", async () => {
+    const result = await callTool("quote_energy_purchase", {
+      receiverAddresses: [receiver],
+      energyPerReceiver: 65000,
+    });
+    const output = getToolOutput(result);
+    expect(output.amount_sun).toBe(2405000);
+    expect(services.quoteEnergyPurchase).toHaveBeenCalledWith([receiver], 65000);
+  });
+
+  it("requires literal true confirmation at the schema boundary", () => {
+    const schema = registeredTools.get("buy_energy_direct")?.config.inputSchema.confirmPayment;
+    expect(schema.safeParse(true).success).toBe(true);
+    expect(schema.safeParse(false).success).toBe(false);
+    expect(schema.safeParse(undefined).success).toBe(false);
+  });
+
+  it("routes a confirmed purchase through the backend-broadcast service", async () => {
+    const result = await callTool("buy_energy_direct", {
+      receiverAddresses: [receiver],
+      energyPerReceiver: 65000,
+      duration: "1h",
+      expectedAmountSun: 2405000,
+      confirmPayment: true,
+    });
+    const output = getToolOutput(result);
+    expect(output.state).toBe("delivered");
+    expect(services.buyEnergyDirect).toHaveBeenCalledWith({
+      receivers: [receiver],
+      energyPerReceiver: 65000,
+      duration: "1h",
+      expectedAmountSun: 2405000,
+      network: "mainnet",
+    });
   });
 });
 

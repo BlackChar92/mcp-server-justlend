@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { TronWeb } from "tronweb";
@@ -20,7 +21,9 @@ export const ENERGY_PURCHASE_TERMINAL_STATES = ["delivered", "partial", "failed"
 
 const ORDER_TTL_MS = 5 * 60 * 1000;
 const PAYMENT_RETRY_TIMEOUT_MS = 2 * 60 * 1000;
+const PAYMENT_INTENT_TTL_MS = 30 * 60 * 1000;
 const RISK_FILE = path.join(os.homedir(), ".mcp-server-justlend", "energy-payment-risks.json");
+const activePayers = new Set<string>();
 
 export class EnergyPurchaseError extends Error {
   code: string;
@@ -80,20 +83,45 @@ export interface EnergyPaymentRiskStore {
   list(payerAddress: string): EnergyPaymentRisk[];
   save(risk: EnergyPaymentRisk): void;
   remove(payerAddress: string, signedTxId?: string): void;
+  /** Acquire an atomic payer-scoped intent before any transaction is signed. */
+  acquireIntent(payerAddress: string, expiresAt: number): string;
+  /** Release only the intent owned by token. */
+  releaseIntent(payerAddress: string, token: string): void;
 }
 
 export class FileEnergyPaymentRiskStore implements EnergyPaymentRiskStore {
   constructor(private readonly filePath = RISK_FILE) {}
 
   private readAll(): EnergyPaymentRisk[] {
+    let source: string;
     try {
-      const parsed: unknown = JSON.parse(fs.readFileSync(this.filePath, "utf8"));
-      return Array.isArray(parsed)
-        ? parsed.filter((risk): risk is EnergyPaymentRisk => Boolean(risk?.payerAddress && risk?.signedTxId))
-        : [];
-    } catch {
-      return [];
+      source = fs.readFileSync(this.filePath, "utf8");
+    } catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw new EnergyPurchaseError(
+        "PAYMENT_RISK_STORE_UNAVAILABLE",
+        "Unable to read the payment-risk store. New payments are blocked until it is repaired.",
+        { cause },
+      );
     }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(source);
+    } catch (cause) {
+      throw new EnergyPurchaseError(
+        "PAYMENT_RISK_STORE_INVALID",
+        "The payment-risk store contains invalid JSON. New payments are blocked until it is repaired.",
+        { cause },
+      );
+    }
+    if (!Array.isArray(parsed) || !parsed.every(isEnergyPaymentRisk)) {
+      throw new EnergyPurchaseError(
+        "PAYMENT_RISK_STORE_INVALID",
+        "The payment-risk store has an invalid schema. New payments are blocked until it is repaired.",
+      );
+    }
+    return parsed;
   }
 
   private writeAll(risks: EnergyPaymentRisk[]): void {
@@ -121,6 +149,159 @@ export class FileEnergyPaymentRiskStore implements EnergyPaymentRiskStore {
     );
     this.writeAll(remaining);
   }
+
+  private intentPath(payerAddress: string): string {
+    return `${this.filePath}.${payerAddress}.intent`;
+  }
+
+  acquireIntent(payerAddress: string, expiresAt: number): string {
+    validateAddress(payerAddress, "payerAddress");
+    const intentPath = this.intentPath(payerAddress);
+    fs.mkdirSync(path.dirname(intentPath), { recursive: true, mode: 0o700 });
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const token = randomUUID();
+      let descriptor: number;
+      try {
+        descriptor = fs.openSync(intentPath, "wx", 0o600);
+      } catch (cause) {
+        if ((cause as NodeJS.ErrnoException).code !== "EEXIST") {
+          throw new EnergyPurchaseError(
+            "PAYMENT_INTENT_LOCK_UNAVAILABLE",
+            "Unable to create the payment-intent lock. New payments are blocked.",
+            { cause },
+          );
+        }
+        const existing = this.readIntent(intentPath);
+        if (existing.expiresAt > Date.now()) {
+          throw new EnergyPurchaseError(
+            "PAYMENT_IN_PROGRESS",
+            "Another energy payment is already in progress for this payer.",
+            { retryable: true },
+          );
+        }
+        try {
+          fs.unlinkSync(intentPath);
+        } catch (unlinkCause) {
+          if ((unlinkCause as NodeJS.ErrnoException).code !== "ENOENT") {
+            throw new EnergyPurchaseError(
+              "PAYMENT_INTENT_LOCK_UNAVAILABLE",
+              "Unable to clear an expired payment-intent lock. New payments are blocked.",
+              { cause: unlinkCause },
+            );
+          }
+        }
+        continue;
+      }
+
+      try {
+        fs.writeFileSync(descriptor, JSON.stringify({ payerAddress, token, createdAt: Date.now(), expiresAt }));
+        fs.fsyncSync(descriptor);
+      } catch (cause) {
+        try { fs.closeSync(descriptor); } catch { /* Preserve the original persistence error. */ }
+        try { fs.unlinkSync(intentPath); } catch { /* Best effort after a failed exclusive create. */ }
+        throw new EnergyPurchaseError(
+          "PAYMENT_INTENT_LOCK_UNAVAILABLE",
+          "Unable to persist the payment-intent lock. New payments are blocked.",
+          { cause },
+        );
+      }
+      try {
+        fs.closeSync(descriptor);
+      } catch (cause) {
+        try { fs.unlinkSync(intentPath); } catch { /* Best effort after a failed exclusive create. */ }
+        throw new EnergyPurchaseError(
+          "PAYMENT_INTENT_LOCK_UNAVAILABLE",
+          "Unable to finalize the payment-intent lock. New payments are blocked.",
+          { cause },
+        );
+      }
+      return token;
+    }
+
+    throw new EnergyPurchaseError(
+      "PAYMENT_INTENT_LOCK_UNAVAILABLE",
+      "Unable to acquire the payment-intent lock after clearing an expired lock.",
+    );
+  }
+
+  releaseIntent(payerAddress: string, token: string): void {
+    const intentPath = this.intentPath(payerAddress);
+    let existing: EnergyPaymentIntent;
+    try {
+      existing = this.readIntent(intentPath);
+    } catch (cause) {
+      if ((cause as EnergyPurchaseError).code === "PAYMENT_INTENT_LOCK_MISSING") return;
+      throw cause;
+    }
+    if (existing.token !== token) {
+      throw new EnergyPurchaseError(
+        "PAYMENT_INTENT_LOCK_LOST",
+        "The payment-intent lock owner changed unexpectedly. The current lock was preserved.",
+      );
+    }
+    try {
+      fs.unlinkSync(intentPath);
+    } catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw new EnergyPurchaseError(
+        "PAYMENT_INTENT_LOCK_UNAVAILABLE",
+        "Unable to release the payment-intent lock. New payments remain blocked.",
+        { cause },
+      );
+    }
+  }
+
+  private readIntent(intentPath: string): EnergyPaymentIntent {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(fs.readFileSync(intentPath, "utf8"));
+    } catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code === "ENOENT") {
+        throw new EnergyPurchaseError("PAYMENT_INTENT_LOCK_MISSING", "The payment-intent lock does not exist.");
+      }
+      throw new EnergyPurchaseError(
+        "PAYMENT_INTENT_LOCK_INVALID",
+        "The payment-intent lock cannot be read safely. New payments are blocked.",
+        { cause },
+      );
+    }
+    if (!isEnergyPaymentIntent(parsed)) {
+      throw new EnergyPurchaseError(
+        "PAYMENT_INTENT_LOCK_INVALID",
+        "The payment-intent lock has an invalid schema. New payments are blocked.",
+      );
+    }
+    return parsed;
+  }
+}
+
+interface EnergyPaymentIntent {
+  payerAddress: string;
+  token: string;
+  createdAt: number;
+  expiresAt: number;
+}
+
+function isEnergyPaymentRisk(value: unknown): value is EnergyPaymentRisk {
+  const risk = value as Partial<EnergyPaymentRisk> | null;
+  return Boolean(
+    risk && typeof risk.payerAddress === "string" && isValidTronAddress(risk.payerAddress) &&
+    typeof risk.signedTxId === "string" && risk.signedTxId.length > 0 &&
+    Number.isSafeInteger(risk.createdAt) && Number(risk.createdAt) >= 0 &&
+    Number.isSafeInteger(risk.expiresAt) && Number(risk.expiresAt) > 0 &&
+    typeof risk.paymentConfirmed === "boolean",
+  );
+}
+
+function isEnergyPaymentIntent(value: unknown): value is EnergyPaymentIntent {
+  const intent = value as Partial<EnergyPaymentIntent> | null;
+  return Boolean(
+    intent && typeof intent.payerAddress === "string" && isValidTronAddress(intent.payerAddress) &&
+    typeof intent.token === "string" && intent.token.length > 0 &&
+    Number.isSafeInteger(intent.createdAt) && Number(intent.createdAt) >= 0 &&
+    Number.isSafeInteger(intent.expiresAt) && Number(intent.expiresAt) > 0,
+  );
 }
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -175,9 +356,13 @@ function resolveBaseUrl(explicit?: string): string {
 }
 
 function validateAddress(address: string, label: string): void {
-  if (!/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(address) || !TronWeb.isAddress(address)) {
+  if (!isValidTronAddress(address)) {
     throw new EnergyPurchaseError("INVALID_ADDRESS", `${label} must be a Base58Check TRON address.`);
   }
+}
+
+function isValidTronAddress(address: string): boolean {
+  return /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(address) && TronWeb.isAddress(address);
 }
 
 function positiveInteger(value: unknown, label: string): number {
@@ -442,8 +627,38 @@ export class EnergyPurchaseApi {
     expectedAmountSun: number;
     network?: string;
   }): Promise<Record<string, unknown>> {
-    const network = input.network || "mainnet";
     const payerAddress = await getWalletAddress();
+    validateAddress(payerAddress, "payerAddress");
+    if (activePayers.has(payerAddress)) {
+      throw new EnergyPurchaseError(
+        "PAYMENT_IN_PROGRESS",
+        "Another energy payment is already in progress for this payer.",
+        { retryable: true },
+      );
+    }
+
+    activePayers.add(payerAddress);
+    let intentToken: string | undefined;
+    try {
+      intentToken = this.riskStore.acquireIntent(payerAddress, Date.now() + PAYMENT_INTENT_TTL_MS);
+      return await this.purchaseWithIntent(input, payerAddress);
+    } finally {
+      try {
+        if (intentToken !== undefined) this.riskStore.releaseIntent(payerAddress, intentToken);
+      } finally {
+        activePayers.delete(payerAddress);
+      }
+    }
+  }
+
+  private async purchaseWithIntent(input: {
+    receivers: string[];
+    energyPerReceiver: number;
+    duration: string;
+    expectedAmountSun: number;
+    network?: string;
+  }, payerAddress: string): Promise<Record<string, unknown>> {
+    const network = input.network || "mainnet";
     const tronWeb = await getSigningClient(network);
     const existing = await this.reconcilePaymentRisks(payerAddress, network);
     if (existing.length) {
@@ -462,8 +677,8 @@ export class EnergyPurchaseApi {
     }
     const quote = await this.quote(input.receivers, input.energyPerReceiver, config);
     const confirmedAmount = positiveInteger(input.expectedAmountSun, "expectedAmountSun");
-    if (quote.amount_sun > confirmedAmount + 1000) {
-      throw new EnergyPurchaseError("AMOUNT_CHANGED", "The authoritative quote exceeds the user-confirmed amount.", {
+    if (quote.amount_sun !== confirmedAmount) {
+      throw new EnergyPurchaseError("AMOUNT_CHANGED", "The authoritative quote differs from the user-confirmed amount.", {
         details: { expectedAmountSun: confirmedAmount, amountSun: quote.amount_sun },
       });
     }

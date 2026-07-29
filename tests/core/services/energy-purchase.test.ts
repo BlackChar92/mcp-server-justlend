@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../../src/core/services/wallet.js", () => ({
@@ -13,6 +16,7 @@ vi.mock("../../../src/core/services/clients.js", () => ({
 import {
   EnergyPurchaseApi,
   EnergyPurchaseError,
+  FileEnergyPaymentRiskStore,
   type EnergyPaymentRisk,
   type EnergyPaymentRiskStore,
 } from "../../../src/core/services/energy-purchase.js";
@@ -43,6 +47,7 @@ function config() {
 
 class MemoryRiskStore implements EnergyPaymentRiskStore {
   risks: EnergyPaymentRisk[] = [];
+  intents = new Map<string, string>();
   list(payerAddress: string) { return this.risks.filter(risk => risk.payerAddress === payerAddress); }
   save(risk: EnergyPaymentRisk) {
     this.risks = this.risks.filter(item => !(item.payerAddress === risk.payerAddress && item.signedTxId === risk.signedTxId));
@@ -52,6 +57,17 @@ class MemoryRiskStore implements EnergyPaymentRiskStore {
     this.risks = this.risks.filter(risk =>
       risk.payerAddress !== payerAddress || (signedTxId !== undefined && risk.signedTxId !== signedTxId),
     );
+  }
+  acquireIntent(payerAddress: string) {
+    if (this.intents.has(payerAddress)) {
+      throw new EnergyPurchaseError("PAYMENT_IN_PROGRESS", "Another payment is in progress.");
+    }
+    const token = `intent-${payerAddress}`;
+    this.intents.set(payerAddress, token);
+    return token;
+  }
+  releaseIntent(payerAddress: string, token: string) {
+    if (this.intents.get(payerAddress) === token) this.intents.delete(payerAddress);
   }
 }
 
@@ -96,6 +112,46 @@ describe("energy direct-purchase service", () => {
 
     await expect(api.quote([RECEIVER], 1)).rejects.toMatchObject({ code: "INVALID_AMOUNT" });
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails closed without overwriting a corrupt payment-risk file", () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-energy-risks-"));
+    const file = path.join(directory, "risks.json");
+    fs.writeFileSync(file, "{not-json", { mode: 0o600 });
+    const store = new FileEnergyPaymentRiskStore(file);
+
+    try {
+      expect(() => store.list(PAYER)).toThrowError(expect.objectContaining({ code: "PAYMENT_RISK_STORE_INVALID" }));
+      expect(() => store.save({
+        payerAddress: PAYER,
+        signedTxId: "new-id",
+        createdAt: 1,
+        expiresAt: 2,
+        paymentConfirmed: false,
+      })).toThrowError(expect.objectContaining({ code: "PAYMENT_RISK_STORE_INVALID" }));
+      expect(fs.readFileSync(file, "utf8")).toBe("{not-json");
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("acquires the payment intent atomically across store instances", () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-energy-intent-"));
+    const file = path.join(directory, "risks.json");
+    const firstStore = new FileEnergyPaymentRiskStore(file);
+    const secondStore = new FileEnergyPaymentRiskStore(file);
+    const firstToken = firstStore.acquireIntent(PAYER, Date.now() + 60_000);
+
+    try {
+      expect(() => secondStore.acquireIntent(PAYER, Date.now() + 60_000))
+        .toThrowError(expect.objectContaining({ code: "PAYMENT_IN_PROGRESS" }));
+      firstStore.releaseIntent(PAYER, firstToken);
+      const secondToken = secondStore.acquireIntent(PAYER, Date.now() + 60_000);
+      secondStore.releaseIntent(PAYER, secondToken);
+    } finally {
+      try { firstStore.releaseIntent(PAYER, firstToken); } catch { /* Already released. */ }
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("signs without local broadcast and retries only the same signed transaction", async () => {
@@ -143,6 +199,94 @@ describe("energy direct-purchase service", () => {
     expect(result).toMatchObject({ ok: true, orderId: 7, txHash: "signed-id", state: "delivered" });
     expect(store.risks).toEqual([]);
     expect("sendRawTransaction" in tronWeb.trx).toBe(false);
+  });
+
+  it("rejects a concurrent purchase for the same payer before a second signature", async () => {
+    const tronWeb = tronWebHarness();
+    vi.mocked(getWalletAddress).mockResolvedValue(PAYER);
+    vi.mocked(getSigningClient).mockResolvedValue(tronWeb as any);
+    vi.mocked(getTronWeb).mockReturnValue(tronWeb as any);
+    let signStartedResolve!: () => void;
+    let releaseSignature!: () => void;
+    const signStarted = new Promise<void>(resolve => { signStartedResolve = resolve; });
+    const signatureGate = new Promise<void>(resolve => { releaseSignature = resolve; });
+    vi.mocked(signTransactionWithWallet).mockImplementation(async transaction => {
+      signStartedResolve();
+      await signatureGate;
+      return { ...transaction, signature: ["aa"] };
+    });
+    const store = new MemoryRiskStore();
+    let buyCalls = 0;
+    const fetch = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/v1/config")) return envelope(config());
+      if (url.endsWith("/v1/price")) {
+        return envelope({ amount_sun: 2405000, pay_address: PAY_ADDRESS, can_fulfill: true });
+      }
+      if (url.endsWith("/v1/consumer/energy/buy")) {
+        buyCalls += 1;
+        return envelope({ id: 7, tx_id: "signed-id", access_token: "token", state: "paid" });
+      }
+      if (url.endsWith("/v1/consumer/energy/orders/7")) return envelope({ id: 7, state: "delivered" });
+      throw new Error(`unexpected ${url}`);
+    });
+    const api = new EnergyPurchaseApi({
+      baseUrl: "https://energy.example",
+      fetch,
+      riskStore: store,
+      sleep: async () => {},
+      now: () => 1,
+    });
+    const input = {
+      receivers: [RECEIVER],
+      energyPerReceiver: 65000,
+      duration: "1h",
+      expectedAmountSun: 2405000,
+      network: "mainnet",
+    };
+
+    const first = api.purchase(input);
+    await signStarted;
+    await expect(api.purchase(input)).rejects.toMatchObject({ code: "PAYMENT_IN_PROGRESS" });
+    releaseSignature();
+    await expect(first).resolves.toMatchObject({ ok: true, orderId: 7 });
+
+    expect(signTransactionWithWallet).toHaveBeenCalledTimes(1);
+    expect(buyCalls).toBe(1);
+  });
+
+  it("requires the live quote to exactly match the confirmed amount", async () => {
+    const tronWeb = tronWebHarness();
+    vi.mocked(getWalletAddress).mockResolvedValue(PAYER);
+    vi.mocked(getSigningClient).mockResolvedValue(tronWeb as any);
+    vi.mocked(getTronWeb).mockReturnValue(tronWeb as any);
+    const fetch = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/v1/config")) return envelope(config());
+      if (url.endsWith("/v1/price")) {
+        return envelope({ amount_sun: 2405001, pay_address: PAY_ADDRESS, can_fulfill: true });
+      }
+      throw new Error(`unexpected ${url}`);
+    });
+    const store = new MemoryRiskStore();
+    const api = new EnergyPurchaseApi({
+      baseUrl: "https://energy.example",
+      fetch,
+      riskStore: store,
+    });
+
+    await expect(api.purchase({
+      receivers: [RECEIVER],
+      energyPerReceiver: 65000,
+      duration: "1h",
+      expectedAmountSun: 2405000,
+      network: "mainnet",
+    })).rejects.toMatchObject({
+      code: "AMOUNT_CHANGED",
+      details: { expectedAmountSun: 2405000, amountSun: 2405001 },
+    });
+    expect(signTransactionWithWallet).not.toHaveBeenCalled();
+    expect(store.intents.size).toBe(0);
   });
 
   it("retains an expired risk when the chain lookup is unavailable", async () => {

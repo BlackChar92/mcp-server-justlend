@@ -22,8 +22,11 @@ export const ENERGY_PURCHASE_TERMINAL_STATES = ["delivered", "partial", "failed"
 const ORDER_TTL_MS = 5 * 60 * 1000;
 const PAYMENT_RETRY_TIMEOUT_MS = 2 * 60 * 1000;
 const PAYMENT_INTENT_TTL_MS = 30 * 60 * 1000;
+const RISK_MUTATION_LOCK_WAIT_MS = 2_000;
+const RISK_MUTATION_LOCK_RETRY_MS = 10;
 const RISK_FILE = path.join(os.homedir(), ".mcp-server-justlend", "energy-payment-risks.json");
 const activePayers = new Set<string>();
+const mutationLockWaitBuffer = new Int32Array(new SharedArrayBuffer(4));
 
 export class EnergyPurchaseError extends Error {
   code: string;
@@ -126,9 +129,98 @@ export class FileEnergyPaymentRiskStore implements EnergyPaymentRiskStore {
 
   private writeAll(risks: EnergyPaymentRisk[]): void {
     fs.mkdirSync(path.dirname(this.filePath), { recursive: true, mode: 0o700 });
-    const temp = `${this.filePath}.${process.pid}.tmp`;
+    const temp = `${this.filePath}.${process.pid}.${randomUUID()}.tmp`;
     fs.writeFileSync(temp, JSON.stringify(risks, null, 2), { mode: 0o600 });
     fs.renameSync(temp, this.filePath);
+  }
+
+  private mutationLockPath(): string {
+    return `${this.filePath}.mutation.lock`;
+  }
+
+  private acquireMutationLock(): string {
+    const lockPath = this.mutationLockPath();
+    const deadline = Date.now() + RISK_MUTATION_LOCK_WAIT_MS;
+    fs.mkdirSync(path.dirname(lockPath), { recursive: true, mode: 0o700 });
+
+    for (;;) {
+      const token = randomUUID();
+      let descriptor: number;
+      try {
+        descriptor = fs.openSync(lockPath, "wx", 0o600);
+      } catch (cause) {
+        if ((cause as NodeJS.ErrnoException).code !== "EEXIST") {
+          throw new EnergyPurchaseError(
+            "PAYMENT_RISK_STORE_LOCK_UNAVAILABLE",
+            "Unable to lock the payment-risk store. New payments are blocked.",
+            { cause },
+          );
+        }
+        if (Date.now() >= deadline) {
+          throw new EnergyPurchaseError(
+            "PAYMENT_RISK_STORE_BUSY",
+            "The payment-risk store is busy or its previous writer exited unexpectedly. New payments are blocked.",
+            { retryable: true },
+          );
+        }
+        Atomics.wait(mutationLockWaitBuffer, 0, 0, RISK_MUTATION_LOCK_RETRY_MS);
+        continue;
+      }
+
+      try {
+        fs.writeFileSync(descriptor, JSON.stringify({ token, pid: process.pid, createdAt: Date.now() }));
+        fs.fsyncSync(descriptor);
+        fs.closeSync(descriptor);
+      } catch (cause) {
+        try { fs.closeSync(descriptor); } catch { /* Preserve the original persistence error. */ }
+        try { fs.unlinkSync(lockPath); } catch { /* Best effort after a failed exclusive create. */ }
+        throw new EnergyPurchaseError(
+          "PAYMENT_RISK_STORE_LOCK_UNAVAILABLE",
+          "Unable to persist the payment-risk store lock. New payments are blocked.",
+          { cause },
+        );
+      }
+      return token;
+    }
+  }
+
+  private releaseMutationLock(token: string): void {
+    const lockPath = this.mutationLockPath();
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(fs.readFileSync(lockPath, "utf8"));
+    } catch (cause) {
+      throw new EnergyPurchaseError(
+        "PAYMENT_RISK_STORE_LOCK_LOST",
+        "The payment-risk store lock cannot be verified. It was preserved for manual recovery.",
+        { cause },
+      );
+    }
+    if (!isRiskMutationLock(parsed) || parsed.token !== token) {
+      throw new EnergyPurchaseError(
+        "PAYMENT_RISK_STORE_LOCK_LOST",
+        "The payment-risk store lock owner changed unexpectedly. The current lock was preserved.",
+      );
+    }
+    try {
+      fs.unlinkSync(lockPath);
+    } catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw new EnergyPurchaseError(
+        "PAYMENT_RISK_STORE_LOCK_UNAVAILABLE",
+        "Unable to release the payment-risk store lock. New payments remain blocked.",
+        { cause },
+      );
+    }
+  }
+
+  private mutateAll(mutator: (risks: EnergyPaymentRisk[]) => EnergyPaymentRisk[]): void {
+    const token = this.acquireMutationLock();
+    try {
+      this.writeAll(mutator(this.readAll()));
+    } finally {
+      this.releaseMutationLock(token);
+    }
   }
 
   list(payerAddress: string): EnergyPaymentRisk[] {
@@ -136,18 +228,19 @@ export class FileEnergyPaymentRiskStore implements EnergyPaymentRiskStore {
   }
 
   save(risk: EnergyPaymentRisk): void {
-    const remaining = this.readAll().filter(item =>
-      !(item.payerAddress === risk.payerAddress && item.signedTxId === risk.signedTxId),
-    );
-    remaining.push(risk);
-    this.writeAll(remaining);
+    this.mutateAll((risks) => {
+      const remaining = risks.filter(item =>
+        !(item.payerAddress === risk.payerAddress && item.signedTxId === risk.signedTxId),
+      );
+      remaining.push(risk);
+      return remaining;
+    });
   }
 
   remove(payerAddress: string, signedTxId?: string): void {
-    const remaining = this.readAll().filter(risk =>
+    this.mutateAll(risks => risks.filter(risk =>
       risk.payerAddress !== payerAddress || (signedTxId !== undefined && risk.signedTxId !== signedTxId),
-    );
-    this.writeAll(remaining);
+    ));
   }
 
   private intentPath(payerAddress: string): string {
@@ -283,6 +376,12 @@ interface EnergyPaymentIntent {
   expiresAt: number;
 }
 
+interface RiskMutationLock {
+  token: string;
+  pid: number;
+  createdAt: number;
+}
+
 function isEnergyPaymentRisk(value: unknown): value is EnergyPaymentRisk {
   const risk = value as Partial<EnergyPaymentRisk> | null;
   return Boolean(
@@ -301,6 +400,15 @@ function isEnergyPaymentIntent(value: unknown): value is EnergyPaymentIntent {
     typeof intent.token === "string" && intent.token.length > 0 &&
     Number.isSafeInteger(intent.createdAt) && Number(intent.createdAt) >= 0 &&
     Number.isSafeInteger(intent.expiresAt) && Number(intent.expiresAt) > 0,
+  );
+}
+
+function isRiskMutationLock(value: unknown): value is RiskMutationLock {
+  const lock = value as Partial<RiskMutationLock> | null;
+  return Boolean(
+    lock && typeof lock.token === "string" && lock.token.length > 0 &&
+    Number.isSafeInteger(lock.pid) && Number(lock.pid) > 0 &&
+    Number.isSafeInteger(lock.createdAt) && Number(lock.createdAt) >= 0,
   );
 }
 

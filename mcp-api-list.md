@@ -4,11 +4,11 @@
 >
 > Lets an AI agent plan tool routing offline without connecting to the server. Side-effect classes align with the AI-Agent documentation standard baseline (Safe / Network Read / Remote Write / Destructive).
 
-**Total tools**: 104  |  **Protocol**: MCP  |  **Transport**: stdio / HTTP(SSE)
+**Total tools**: 103  |  **Protocol**: MCP  |  **Transport**: stdio / HTTP(SSE)
 
-**Read-only tools**: 63  |  **Write tools**: 41 (of which marked destructive: 28)
+**Read-only tools**: 62  |  **Write tools**: 41 (of which marked destructive: 28)
 
-> ⚠️ Tools marked 🔴 **sign and broadcast TRON transactions that move real assets** — the client MUST require human confirmation (HITL) before executing. 🟡 tools only change local wallet/network config or start an interaction. Private keys are managed encrypted by `@bankofai/agent-wallet` or signed via the TronLink browser wallet, and are **never passed as tool arguments**.
+> ⚠️ Tools marked 🔴 **sign and broadcast TRON transactions that move real assets** — the client MUST require human confirmation (HITL) before executing. 🟡 tools only change local wallet/network config or start an interaction. Private keys are managed encrypted by `@bankofai/agent-wallet` and are **never passed as tool arguments**. The legacy unauthenticated browser-wallet bridge is disabled.
 
 ---
 
@@ -19,7 +19,7 @@
 **Get Wallet Address**  
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: false
-- **Description**: Get the active wallet address. Returns browser wallet address if in browser mode, agent-wallet address if agent mode is selected, or a first-use wallet selection guide if no wallet mode has been chosen yet.
+- **Description**: Get the active agent-wallet address, or a first-use wallet setup guide if no wallet mode has been chosen yet. Legacy browser mode is disabled until its bridge supports request-level authentication.
 - **Params**: none
 
 ### `list_wallets`
@@ -46,7 +46,7 @@
 **Connect Browser Wallet**  
 - **Side effect**: 🟡 State-changing (Write) — changes local wallet/network config or starts an interaction; client should confirm
 - **annotations**: idempotent: false · openWorld: true
-- **Description**: Connect to a browser wallet (TronLink, TokenPocket) for signing transactions. RECOMMENDED: More secure than agent-wallet because private keys never leave your browser. This opens a browser window where the user must approve the connection. Tell the user to switch to their browser to approve. Blocks until the user acts or the request times out (5 min). After connecting, all write operations will use the browser wallet for signing.
+- **Description**: Browser wallet signing is temporarily disabled because the legacy local bridge lacks request-level authentication. Use agent-wallet with AGENT_WALLET_PASSWORD until an authenticated bridge is available.
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
@@ -57,7 +57,7 @@
 **Set Wallet Mode**  
 - **Side effect**: 🟡 State-changing (Write) — changes local wallet/network config or starts an interaction; client should confirm
 - **annotations**: idempotent: true · openWorld: false
-- **Description**: Switch wallet signing mode. 'browser' (recommended, more secure): uses TronLink in your browser — private keys never leave the browser. 'agent': uses encrypted key stored in ~/.agent-wallet/. Selecting agent mode for the first time will create an encrypted agent-wallet if needed. Browser mode requires connect_browser_wallet first.
+- **Description**: Switch wallet signing mode. 'agent' uses an encrypted key stored in ~/.agent-wallet/. Browser mode is disabled until the local bridge supports request-level authentication. Selecting agent mode for the first time will create an encrypted agent-wallet if needed.
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
@@ -68,7 +68,7 @@
 **Get Wallet Mode**  
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: false
-- **Description**: Get the current wallet signing mode (browser, agent, or unset), connected address, and connection status.
+- **Description**: Get the current wallet signing mode and agent-wallet status. Legacy browser mode is reported as disabled.
 - **Params**: none
 
 ### `set_network`
@@ -524,7 +524,7 @@
 | `proposalId` | number | ✅ |  | The proposal ID to withdraw votes from |
 | `network` | string | — |  | Network. Default: mainnet |
 
-## Energy Rental (15)
+## Energy Rental (14)
 
 ### `get_energy_purchase_config`
 
@@ -545,6 +545,7 @@
 |-------|------|:--------:|---------|-------------|
 | `receiverAddresses` | string[] | ✅ |  | One or more energy receiver addresses |
 | `energyPerReceiver` | number (min 0, max 9007199254740991) | ✅ |  | Energy amount for each receiver |
+| `duration` | string (min len 1) | ✅ |  | Duration exactly as advertised by get_energy_purchase_config |
 
 ### `get_energy_purchase_order`
 
@@ -557,19 +558,6 @@
 |-------|------|:--------:|---------|-------------|
 | `orderId` | union | ✅ |  | Energy purchase order id |
 | `orderToken` | string (min len 1) | — |  | Optional X-Consumer-Order-Token returned when the order was accepted |
-
-### `get_energy_purchase_history`
-
-**Energy Purchase History**  
-- **Side effect**: 🟢 Read-only (Safe / Network Read)
-- **annotations**: idempotent: true · openWorld: true
-- **Description**: Get settled energy direct-purchase history for a payer address.
-
-| Param | Type | Required | Default | Description |
-|-------|------|:--------:|---------|-------------|
-| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | Payer address. Default: configured wallet |
-| `page` | number (min 0) | — |  | Page number, 1-based. Default: 1 |
-| `pageSize` | number (min 0, max 100) | — |  | Rows per page. Default: 20 |
 
 ### `get_energy_payment_risk`
 
@@ -595,7 +583,8 @@
 | `receiverAddresses` | string[] | ✅ |  | One or more energy receiver addresses |
 | `energyPerReceiver` | number (min 0, max 9007199254740991) | ✅ |  | Energy amount for each receiver |
 | `duration` | string (min len 1) | ✅ |  | Duration exactly as advertised by get_energy_purchase_config |
-| `expectedAmountSun` | number (min 0, max 9007199254740991) | ✅ |  | Exact amount_sun from the quote explicitly confirmed by the user |
+| `expectedAmountSun` | number (min 0, max 9007199254740991) | ✅ |  | Exact total_sun from the quote explicitly confirmed by the user |
+| `expectedPayAddress` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | ✅ |  | Exact payment_address from the quote explicitly confirmed by the user |
 | `confirmPayment` | literal | ✅ |  | Must be true only after the user explicitly confirms this value-moving payment |
 | `network` | string | — |  | Signing network. Default: configured network |
 

@@ -27,6 +27,8 @@ const PAYER = "TJRabPrwbZy45sbavfcjinPJC18kjpRTv8";
 const SECOND_PAYER = "TMwFHYXLJaRUPeW6421aqXL4ZEzPRFGkGT";
 const RECEIVER = "TVjsyZ7fYF3qLF6BQgPmTEZy1xrNNyVAAA";
 const PAY_ADDRESS = "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb";
+const TX_ID = "ab".repeat(32);
+const RAW_HEX = "cd".repeat(16);
 
 function envelope(data: unknown, status = 200): Response {
   return new Response(JSON.stringify({ code: "0", msg: "ok", data }), {
@@ -39,10 +41,10 @@ function config() {
   return {
     min_energy: 65000,
     max_energy: 5000000,
-    max_receivers: 50,
-    durations: ["1h"],
-    presets: [65000],
-    resource_pool_addresses: [],
+    max_batch_receivers: 50,
+    supported_durations: ["1h"],
+    energy_presets: [65000],
+    payment_address: PAY_ADDRESS,
   };
 }
 
@@ -74,8 +76,14 @@ class MemoryRiskStore implements EnergyPaymentRiskStore {
 
 function tronWebHarness() {
   const unsigned = { txID: "unsigned", raw_data: { expiration: 1000, contract: [] }, raw_data_hex: "00", visible: false };
-  const extended = { ...unsigned, txID: "signed-id", raw_data: { ...unsigned.raw_data, expiration: 300001 } };
+  const extended = { ...unsigned, raw_data: { ...unsigned.raw_data, expiration: 300001 } };
   return {
+    fullNode: { host: "https://api.trongrid.io" },
+    utils: { transaction: {
+      txJsonToPb: vi.fn((transaction: unknown) => transaction),
+      txPbToRawDataHex: vi.fn(() => RAW_HEX),
+      txPbToTxID: vi.fn(() => TX_ID),
+    } },
     transactionBuilder: {
       sendTrx: vi.fn(async () => unsigned),
       extendExpiration: vi.fn(async () => extended),
@@ -111,7 +119,7 @@ describe("energy direct-purchase service", () => {
     });
     const api = new EnergyPurchaseApi({ baseUrl: "https://energy.example", fetch });
 
-    await expect(api.quote([RECEIVER], 1)).rejects.toMatchObject({ code: "INVALID_AMOUNT" });
+    await expect(api.quote([RECEIVER], 1, "1h")).rejects.toMatchObject({ code: "INVALID_AMOUNT" });
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
@@ -207,13 +215,13 @@ describe("energy direct-purchase service", () => {
       const url = String(input);
       if (url.endsWith("/v1/config")) return envelope(config());
       if (url.endsWith("/v1/price")) {
-        return envelope({ amount_sun: 2405000, pay_address: PAY_ADDRESS, can_fulfill: true });
+        return envelope({ total_sun: 2405000, total_trx: "2.405" });
       }
       if (url.endsWith("/v1/consumer/energy/buy")) {
         submitted.push(JSON.parse(String(init?.body)).signed_transaction.txID);
         buyCalls += 1;
         if (buyCalls === 1) throw new Error("connection reset");
-        return envelope({ id: 7, tx_id: "signed-id", access_token: "token", state: "paid" });
+        return envelope({ batch: { id: "7", access_token: "token", state: "paid" }, payment: { tx_hash: TX_ID } });
       }
       if (url.endsWith("/v1/consumer/energy/orders/7")) return envelope({ id: 7, state: "delivered" });
       throw new Error(`unexpected ${url}`);
@@ -231,12 +239,13 @@ describe("energy direct-purchase service", () => {
       energyPerReceiver: 65000,
       duration: "1h",
       expectedAmountSun: 2405000,
+      expectedPayAddress: PAY_ADDRESS,
       network: "mainnet",
     });
 
-    expect(submitted).toEqual(["signed-id", "signed-id"]);
+    expect(submitted).toEqual([TX_ID, TX_ID]);
     expect(signTransactionWithWallet).toHaveBeenCalledTimes(1);
-    expect(result).toMatchObject({ ok: true, orderId: 7, txHash: "signed-id", state: "delivered" });
+    expect(result).toMatchObject({ ok: true, orderId: "7", txHash: TX_ID, state: "delivered" });
     expect(store.risks).toEqual([]);
     expect("sendRawTransaction" in tronWeb.trx).toBe(false);
   });
@@ -261,11 +270,11 @@ describe("energy direct-purchase service", () => {
       const url = String(input);
       if (url.endsWith("/v1/config")) return envelope(config());
       if (url.endsWith("/v1/price")) {
-        return envelope({ amount_sun: 2405000, pay_address: PAY_ADDRESS, can_fulfill: true });
+        return envelope({ total_sun: 2405000, total_trx: "2.405" });
       }
       if (url.endsWith("/v1/consumer/energy/buy")) {
         buyCalls += 1;
-        return envelope({ id: 7, tx_id: "signed-id", access_token: "token", state: "paid" });
+        return envelope({ batch: { id: "7", access_token: "token", state: "paid" }, payment: { tx_hash: TX_ID } });
       }
       if (url.endsWith("/v1/consumer/energy/orders/7")) return envelope({ id: 7, state: "delivered" });
       throw new Error(`unexpected ${url}`);
@@ -282,6 +291,7 @@ describe("energy direct-purchase service", () => {
       energyPerReceiver: 65000,
       duration: "1h",
       expectedAmountSun: 2405000,
+      expectedPayAddress: PAY_ADDRESS,
       network: "mainnet",
     };
 
@@ -289,7 +299,7 @@ describe("energy direct-purchase service", () => {
     await signStarted;
     await expect(api.purchase(input)).rejects.toMatchObject({ code: "PAYMENT_IN_PROGRESS" });
     releaseSignature();
-    await expect(first).resolves.toMatchObject({ ok: true, orderId: 7 });
+    await expect(first).resolves.toMatchObject({ ok: true, orderId: "7" });
 
     expect(signTransactionWithWallet).toHaveBeenCalledTimes(1);
     expect(buyCalls).toBe(1);
@@ -304,7 +314,7 @@ describe("energy direct-purchase service", () => {
       const url = String(input);
       if (url.endsWith("/v1/config")) return envelope(config());
       if (url.endsWith("/v1/price")) {
-        return envelope({ amount_sun: 2405001, pay_address: PAY_ADDRESS, can_fulfill: true });
+        return envelope({ total_sun: 2405001, total_trx: "2.405001" });
       }
       throw new Error(`unexpected ${url}`);
     });
@@ -320,6 +330,7 @@ describe("energy direct-purchase service", () => {
       energyPerReceiver: 65000,
       duration: "1h",
       expectedAmountSun: 2405000,
+      expectedPayAddress: PAY_ADDRESS,
       network: "mainnet",
     })).rejects.toMatchObject({
       code: "AMOUNT_CHANGED",

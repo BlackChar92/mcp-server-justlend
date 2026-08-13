@@ -201,8 +201,8 @@ lines.push("");
 lines.push(
   "> ⚠️ Tools marked 🔴 **sign and broadcast TRON transactions that move real assets** — the client " +
     "MUST require human confirmation (HITL) before executing. 🟡 tools only change local wallet/network " +
-    "config or start an interaction. Private keys are managed encrypted by `@bankofai/agent-wallet` or " +
-    "signed via the TronLink browser wallet, and are **never passed as tool arguments**.",
+    "config or start an interaction. Private keys are managed encrypted by `@bankofai/agent-wallet` and are " +
+    "**never passed as tool arguments**. The legacy unauthenticated browser-wallet bridge is disabled.",
 );
 lines.push("");
 lines.push("---");

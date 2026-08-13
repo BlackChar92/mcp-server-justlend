@@ -72,7 +72,7 @@ function assertInsecureRuntimeSecretsAllowed(): void {
     "Refusing to auto-generate a wallet encryption password and write it to " +
     "runtime_secrets.json next to the encrypted store: this reduces at-rest " +
     "encryption to obfuscation. Set AGENT_WALLET_PASSWORD (held only in memory) " +
-    "or use browser mode (TronLink). To explicitly accept the insecure legacy " +
+    "instead. To explicitly accept the insecure legacy " +
     "behavior, set ALLOW_INSECURE_RUNTIME_SECRETS=true.",
   );
 }
@@ -98,7 +98,7 @@ function secureRuntimeSecretsFile(configDir: string): void {
  *   2. Random 32-byte password saved to runtime_secrets.json (legacy auto-init).
  *      In this mode the at-rest encryption is effectively obfuscation because
  *      the key sits next to the ciphertext. A loud warning is emitted so the
- *      operator knows to switch to browser mode or set AGENT_WALLET_PASSWORD
+ *      operator knows to set AGENT_WALLET_PASSWORD
  *      before holding any meaningful balance.
  *
  * @returns The new wallet address, or null if wallets already exist.
@@ -160,8 +160,8 @@ export async function autoInitWallet(): Promise<{ address: string; walletId: str
       `[agent-wallet] WARNING: auto-generated encryption password was written to ` +
       `${join(configDir, "runtime_secrets.json")} alongside the encrypted store. ` +
       `At-rest encryption is effectively obfuscation in this mode. ` +
-      `For any meaningful balance, prefer browser mode (TronLink) or set ` +
-      `AGENT_WALLET_PASSWORD before first run so the password is held only in memory.`,
+      `For any meaningful balance, set AGENT_WALLET_PASSWORD before first run ` +
+      `so the password is held only in memory.`,
     );
   }
 
@@ -234,7 +234,7 @@ export async function importWallet(
         `[agent-wallet] WARNING: auto-generated encryption password was written to ` +
         `${join(configDir, "runtime_secrets.json")} alongside the encrypted store. ` +
         `At-rest encryption is effectively obfuscation in this mode. ` +
-        `Prefer browser mode (TronLink) or set AGENT_WALLET_PASSWORD.`,
+        `Set AGENT_WALLET_PASSWORD instead of persisting the encryption key beside the wallet.`,
       );
     }
   }
@@ -324,23 +324,22 @@ export function getAgentWallet(): Promise<Wallet> {
 
 /**
  * Get the configured wallet address.
- * In browser mode, returns the browser-connected address.
- * In agent mode, returns the agent-wallet address.
+ * Browser mode is retained only as a fail-closed compatibility value; agent
+ * mode returns the configured agent-wallet address.
  */
 export async function getWalletAddress(): Promise<string> {
   const mode = getWalletMode();
 
   if (mode === "browser") {
-    const address = getBrowserSigner().getConnectedAddress();
-    if (!address) {
-      throw new Error("Browser wallet not connected. Use the connect_browser_wallet tool first.");
-    }
-    return address;
+    throw new Error(
+      "Browser wallet mode is disabled because its legacy loopback bridge lacks request-level authentication. " +
+      "Switch to agent mode.",
+    );
   }
 
   if (mode === "unset") {
     throw new Error(
-      "Wallet mode not selected. Use connect_browser_wallet for TronLink, or set_wallet_mode with mode='agent' to use agent-wallet.",
+      "Wallet mode not selected. Use set_wallet_mode with mode='agent' and configure AGENT_WALLET_PASSWORD.",
     );
   }
 
@@ -377,10 +376,10 @@ export async function getSigningClient(network = "mainnet"): Promise<TronWeb> {
 
 /**
  * Sign a transaction and return the signed transaction object ready for broadcasting.
- * Routes to browser wallet or agent-wallet based on the current wallet mode.
+ * Routes supported requests to agent-wallet. Browser mode fails closed.
  *
- * NOTE on `description`: neither `tronlink-signer` nor `@bankofai/agent-wallet`
- * exposes a metadata channel to the underlying signing UI, so we surface the
+ * NOTE on `description`: `@bankofai/agent-wallet` does not expose a metadata
+ * channel to the underlying signing UI, so we surface the
  * description to the MCP server's stderr log (the standard MCP log channel)
  * just before signing. Operators running stdio-mode see it directly; HTTP-mode
  * operators see it in server logs.
@@ -416,12 +415,7 @@ export async function signTransactionWithWallet(
   }
 
   if (getWalletMode() === "browser") {
-    const signer = getBrowserSigner();
-    const { signedTransaction } = await signer.signTransaction(unsignedTx, description, network);
-    if (signedTransaction && signedTransaction.signature) {
-      return { ...unsignedTx, signature: signedTransaction.signature };
-    }
-    return signedTransaction;
+    throw new Error("Browser wallet signing is disabled because the legacy loopback bridge is unauthenticated.");
   }
 
   const wallet = await getAgentWallet();
@@ -447,17 +441,12 @@ export async function signTransactionWithWallet(
 
 /**
  * Sign an arbitrary message.
- * Routes to browser wallet (signMessageV2) or agent-wallet based on mode.
+ * Routes supported requests to agent-wallet; browser mode fails closed.
  * @returns Signature as a hex string.
  */
 export async function signMessage(message: string): Promise<string> {
   if (getWalletMode() === "browser") {
-    const signer = getBrowserSigner();
-    const { signature } = await signer.signMessage({
-      message,
-      network: getGlobalNetwork(),
-    });
-    return signature;
+    throw new Error("Browser wallet signing is disabled because the legacy loopback bridge is unauthenticated.");
   }
 
   const wallet = await getAgentWallet();
@@ -467,7 +456,7 @@ export async function signMessage(message: string): Promise<string> {
 
 /**
  * Sign typed data (EIP-712 / TRON-712).
- * Routes to browser wallet (via tronlink-signer) or agent-wallet based on mode.
+ * Routes supported requests to agent-wallet; browser mode fails closed.
  */
 export async function signTypedData(
   domain: object,
@@ -475,12 +464,7 @@ export async function signTypedData(
   value: object,
 ): Promise<string> {
   if (getWalletMode() === "browser") {
-    const signer = getBrowserSigner();
-    const { signature } = await signer.signTypedData(
-      { domain, types, message: value },
-      getGlobalNetwork(),
-    );
-    return signature;
+    throw new Error("Browser wallet signing is disabled because the legacy loopback bridge is unauthenticated.");
   }
 
   const wallet = await getAgentWallet();

@@ -352,14 +352,13 @@ vi.mock("../../src/core/services/index.js", () => ({
 
   // Energy Direct Purchase
   getEnergyPurchaseConfig: vi.fn(async () => ({
-    config: { min_energy: 65000, max_energy: 5000000, max_receivers: 50, durations: ["1h"] },
+    config: { min_energy: 65000, max_energy: 5000000, max_batch_receivers: 50, supported_durations: ["1h"], payment_address: "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb" },
     price: { unit_price_sun: 37 },
     pool: { available_energy: 10000000 },
   })),
   quoteEnergyPurchase: vi.fn(async () => ({
-    amount_sun: 2405000,
-    pay_address: "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb",
-    can_fulfill: true,
+    total_sun: 2405000,
+    payment_address: "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb",
   })),
   getEnergyPurchaseOrder: vi.fn(async () => ({ id: 7, state: "delivered" })),
   getEnergyPurchaseHistory: vi.fn(async () => ({ rows: [], total: 0 })),
@@ -528,7 +527,6 @@ describe("Tool Registration", () => {
       "get_energy_purchase_config",
       "quote_energy_purchase",
       "get_energy_purchase_order",
-      "get_energy_purchase_history",
       "get_energy_payment_risk",
       "buy_energy_direct",
       // sTRX Staking
@@ -582,7 +580,6 @@ describe("Tool Registration", () => {
       "get_energy_purchase_config",
       "quote_energy_purchase",
       "get_energy_purchase_order",
-      "get_energy_purchase_history",
       "get_energy_payment_risk",
     ];
     for (const name of readOnlyTools) {
@@ -618,8 +615,9 @@ describe("Wallet & Network Tools", () => {
     const output = getToolOutput(result);
     expect(output.walletMode).toBe("unset");
     expect(output.address).toBeNull();
-    expect(output.options.recommended.action).toBe("connect_browser_wallet");
-    expect(output.options.alternative.params.mode).toBe("agent");
+    expect(output.options.recommended.action).toBe("set_wallet_mode");
+    expect(output.options.recommended.params.mode).toBe("agent");
+    expect(output.options.browser.available).toBe(false);
     expect(services.autoInitWallet).not.toHaveBeenCalled();
   });
 
@@ -1062,7 +1060,7 @@ describe("Energy Direct Purchase Tools", () => {
   it("returns live purchase config without a wallet write", async () => {
     const result = await callTool("get_energy_purchase_config");
     const output = getToolOutput(result);
-    expect(output.config.durations).toEqual(["1h"]);
+    expect(output.config.supported_durations).toEqual(["1h"]);
     expect(services.getEnergyPurchaseConfig).toHaveBeenCalled();
   });
 
@@ -1070,10 +1068,40 @@ describe("Energy Direct Purchase Tools", () => {
     const result = await callTool("quote_energy_purchase", {
       receiverAddresses: [receiver],
       energyPerReceiver: 65000,
+      duration: "1h",
     });
     const output = getToolOutput(result);
-    expect(output.amount_sun).toBe(2405000);
-    expect(services.quoteEnergyPurchase).toHaveBeenCalledWith([receiver], 65000);
+    expect(output.total_sun).toBe(2405000);
+    expect(services.quoteEnergyPurchase).toHaveBeenCalledWith([receiver], 65000, "1h");
+  });
+
+  it("does not expose the replayable signed transaction in payment-risk output", async () => {
+    vi.mocked(services.getEnergyPaymentRisks).mockResolvedValueOnce([{
+      payerAddress: receiver,
+      signedTxId: "ab".repeat(32),
+      createdAt: 1,
+      expiresAt: 2,
+      paymentConfirmed: false,
+      networkFingerprint: "api=production;provider=mainnet",
+      signedRequest: {
+        receivers: [receiver],
+        energy: 65000,
+        duration: "1h",
+        payer_address: receiver,
+        signed_transaction: {
+          txID: "ab".repeat(32),
+          raw_data_hex: "deadbeef",
+          signature: ["secret-signature"],
+          visible: false,
+        },
+      },
+    }] as any);
+
+    const result = await callTool("get_energy_payment_risk", { address: receiver });
+    const output = getToolOutput(result);
+    expect(output.risks[0]).toMatchObject({ signedTxId: "ab".repeat(32), replayAvailable: true });
+    expect(output.risks[0]).not.toHaveProperty("signedRequest");
+    expect(result.content[0].text).not.toContain("secret-signature");
   });
 
   it("requires literal true confirmation at the schema boundary", () => {
@@ -1089,6 +1117,7 @@ describe("Energy Direct Purchase Tools", () => {
       energyPerReceiver: 65000,
       duration: "1h",
       expectedAmountSun: 2405000,
+      expectedPayAddress: "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb",
       confirmPayment: true,
     });
     const output = getToolOutput(result);
@@ -1098,6 +1127,7 @@ describe("Energy Direct Purchase Tools", () => {
       energyPerReceiver: 65000,
       duration: "1h",
       expectedAmountSun: 2405000,
+      expectedPayAddress: "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb",
       network: "mainnet",
     });
   });

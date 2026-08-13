@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { TronWeb } from "tronweb";
@@ -14,7 +14,6 @@ export const ENERGY_PURCHASE_PATHS = {
   quote: "/v1/price",
   buy: "/v1/consumer/energy/buy",
   order: (id: string | number) => `/v1/consumer/energy/orders/${encodeURIComponent(String(id))}`,
-  history: "/v1/consumer/energy/orders/history",
 } as const;
 
 export const ENERGY_PURCHASE_TERMINAL_STATES = ["delivered", "partial", "failed", "expired", "cancelled"];
@@ -22,6 +21,11 @@ export const ENERGY_PURCHASE_TERMINAL_STATES = ["delivered", "partial", "failed"
 const ORDER_TTL_MS = 5 * 60 * 1000;
 const PAYMENT_RETRY_TIMEOUT_MS = 2 * 60 * 1000;
 const PAYMENT_INTENT_TTL_MS = 30 * 60 * 1000;
+const DETERMINISTIC_PRE_BROADCAST_CODES = new Set([
+  "ADDR_OVERFLOW", "BAD_REQUEST", "CONFIG_INVALID", "EMPTY_RECEIVERS",
+  "INVALID_DURATION", "INVALID_RECEIVERS", "PAYMENT_CALC_FAILED",
+  "POOL_INSUFFICIENT", "PRICE_MOVED", "RECEIVER_IS_CONTRACT", "TX_EXPIRED",
+]);
 const RISK_MUTATION_LOCK_WAIT_MS = 2_000;
 const RISK_MUTATION_LOCK_RETRY_MS = 10;
 const RISK_FILE = path.join(os.homedir(), ".mcp-server-justlend", "energy-payment-risks.json");
@@ -56,22 +60,32 @@ export class EnergyPurchaseError extends Error {
 export interface EnergyPurchaseConfig {
   min_energy: number;
   max_energy: number;
-  max_receivers: number;
-  presets?: number[];
+  max_batch_receivers: number;
+  energy_presets: number[];
   activation_fee_sun?: number;
-  usage_window_minutes?: number;
-  durations: string[];
-  resource_pool_addresses?: string[];
+  supported_durations: string[];
+  payment_address: string;
   [key: string]: unknown;
 }
 
 export interface EnergyPurchaseQuote {
-  amount_sun: number;
-  pay_address: string;
-  can_fulfill: boolean;
-  max_single_order_energy?: number;
-  items?: unknown[];
+  total_sun: number;
+  total_trx?: string;
+  payment_address: string;
   [key: string]: unknown;
+}
+
+export interface SignedEnergyPurchaseRequest {
+  receivers: string[];
+  energy: number;
+  duration: string;
+  payer_address: string;
+  signed_transaction: {
+    txID: string;
+    raw_data_hex: string;
+    signature: string[];
+    visible: boolean;
+  };
 }
 
 export interface EnergyPaymentRisk {
@@ -80,6 +94,9 @@ export interface EnergyPaymentRisk {
   createdAt: number;
   expiresAt: number;
   paymentConfirmed: boolean;
+  networkFingerprint?: string;
+  signedRequest?: SignedEnergyPurchaseRequest;
+  recoveredOrder?: Record<string, unknown>;
 }
 
 export interface EnergyPaymentRiskStore {
@@ -90,6 +107,8 @@ export interface EnergyPaymentRiskStore {
   acquireIntent(payerAddress: string, expiresAt: number): string;
   /** Release only the intent owned by token. */
   releaseIntent(payerAddress: string, token: string): void;
+  /** Atomically publish the signed risk before releasing the payer intent. */
+  finalizeIntent?(payerAddress: string, token: string, risk: EnergyPaymentRisk): void;
 }
 
 export class FileEnergyPaymentRiskStore implements EnergyPaymentRiskStore {
@@ -345,6 +364,27 @@ export class FileEnergyPaymentRiskStore implements EnergyPaymentRiskStore {
     }
   }
 
+  finalizeIntent(payerAddress: string, token: string, risk: EnergyPaymentRisk): void {
+    const intentPath = this.intentPath(payerAddress);
+    const existing = this.readIntent(intentPath);
+    if (existing.token !== token) {
+      throw new EnergyPurchaseError(
+        "PAYMENT_INTENT_LOCK_LOST",
+        "The payment-intent lock owner changed unexpectedly. No payment risk was published.",
+      );
+    }
+    this.save(risk);
+    try {
+      fs.unlinkSync(intentPath);
+    } catch (cause) {
+      throw new EnergyPurchaseError(
+        "PAYMENT_INTENT_LOCK_UNAVAILABLE",
+        "Payment risk was persisted but the payment-intent lock could not be released.",
+        { cause },
+      );
+    }
+  }
+
   private readIntent(intentPath: string): EnergyPaymentIntent {
     let parsed: unknown;
     try {
@@ -389,7 +429,11 @@ function isEnergyPaymentRisk(value: unknown): value is EnergyPaymentRisk {
     typeof risk.signedTxId === "string" && risk.signedTxId.length > 0 &&
     Number.isSafeInteger(risk.createdAt) && Number(risk.createdAt) >= 0 &&
     Number.isSafeInteger(risk.expiresAt) && Number(risk.expiresAt) > 0 &&
-    typeof risk.paymentConfirmed === "boolean",
+    typeof risk.paymentConfirmed === "boolean" &&
+    (risk.networkFingerprint === undefined ||
+      (typeof risk.networkFingerprint === "string" && risk.networkFingerprint.length > 0)) &&
+    (risk.signedRequest === undefined ||
+      risk.signedRequest?.signed_transaction?.txID === risk.signedTxId),
   );
 }
 
@@ -425,6 +469,7 @@ export interface EnergyPurchaseApiOptions {
   orderPollTimeoutMs?: number;
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
+  networkFingerprint?: string;
 }
 
 function envFlag(name: string): boolean {
@@ -481,7 +526,12 @@ function positiveInteger(value: unknown, label: string): number {
   return numberValue;
 }
 
-function validateQuoteInput(receivers: string[], energyPerReceiver: number, config: EnergyPurchaseConfig): void {
+function validateQuoteInput(
+  receivers: string[],
+  energyPerReceiver: number,
+  duration: string,
+  config: EnergyPurchaseConfig,
+): void {
   if (!Array.isArray(receivers) || receivers.length === 0) {
     throw new EnergyPurchaseError("EMPTY_RECEIVERS", "At least one receiver is required.");
   }
@@ -489,7 +539,7 @@ function validateQuoteInput(receivers: string[], energyPerReceiver: number, conf
   const energy = positiveInteger(energyPerReceiver, "energyPerReceiver");
   const min = positiveInteger(config?.min_energy, "config.min_energy");
   const max = positiveInteger(config?.max_energy, "config.max_energy");
-  const maxReceivers = positiveInteger(config?.max_receivers, "config.max_receivers");
+  const maxReceivers = positiveInteger(config?.max_batch_receivers, "config.max_batch_receivers");
   if (max < min) throw new EnergyPurchaseError("INVALID_RESPONSE", "API returned max_energy below min_energy.");
   if (energy < min || energy > max) {
     throw new EnergyPurchaseError("INVALID_AMOUNT", `Energy per receiver must be between ${min} and ${max}.`);
@@ -497,16 +547,63 @@ function validateQuoteInput(receivers: string[], energyPerReceiver: number, conf
   if (receivers.length > maxReceivers) {
     throw new EnergyPurchaseError("ADDR_OVERFLOW", `A maximum of ${maxReceivers} receivers is allowed.`);
   }
-  const resourcePools = new Set(config.resource_pool_addresses || []);
-  if (receivers.some(receiver => resourcePools.has(receiver))) {
-    throw new EnergyPurchaseError("INVALID_RECEIVERS", "Resource-pool addresses cannot receive purchased energy.");
+  if (!Array.isArray(config.supported_durations) || !config.supported_durations.includes(duration)) {
+    throw new EnergyPurchaseError("INVALID_DURATION", "duration must come from the live supported_durations list.");
   }
+  validateAddress(config.payment_address, "config payment_address");
 }
 
-function normalizeSignedTransaction(value: unknown): Record<string, any> {
+function normalizeHex(value: unknown): string {
+  return typeof value === "string" ? value.replace(/^0x/i, "").toLowerCase() : "";
+}
+
+function providerFingerprint(tronWeb: TronWeb): string {
+  const values = [
+    (tronWeb.fullNode as any)?.host,
+    (tronWeb.solidityNode as any)?.host,
+    (tronWeb.eventServer as any)?.host,
+  ].filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+  return [...new Set(values.map(value => {
+    try {
+      const parsed = new URL(value);
+      return `${parsed.protocol}//${parsed.host}${parsed.pathname.replace(/\/$/, "")}`;
+    } catch {
+      return value.trim();
+    }
+  }))].join("|");
+}
+
+function consumerBuyMemo(receivers: string[], energy: number, duration: string): string {
+  const payload = ["a6-buy-v1", String(energy), duration, ...receivers].join("\0");
+  return `a6-buy-v1:${createHash("sha256").update(payload).digest("hex")}`;
+}
+
+function attachMemo(tronWeb: TronWeb, transaction: Record<string, any>, memo: string): Record<string, any> {
+  const utils = (tronWeb as any)?.utils?.transaction;
+  if (!transaction?.raw_data || typeof utils?.txJsonToPb !== "function" ||
+      typeof utils?.txPbToRawDataHex !== "function" || typeof utils?.txPbToTxID !== "function") {
+    throw new EnergyPurchaseError(
+      "CONFIG_MISSING",
+      "TronWeb protobuf utilities are required to bind the payment memo safely.",
+    );
+  }
+  const payable: Record<string, any> = {
+    ...transaction,
+    raw_data: { ...transaction.raw_data, data: Buffer.from(memo, "utf8").toString("hex") },
+  };
+  const protobuf = utils.txJsonToPb(payable);
+  payable.raw_data_hex = normalizeHex(utils.txPbToRawDataHex(protobuf));
+  payable.txID = normalizeHex(utils.txPbToTxID(protobuf));
+  if (!payable.txID || !payable.raw_data_hex) {
+    throw new EnergyPurchaseError("INVALID_UNSIGNED_TX", "Unable to derive the memo-bound transaction identity.");
+  }
+  return payable;
+}
+
+function normalizeSignedTransaction(value: unknown, expected: Record<string, any>): Record<string, any> {
   const signed = (value as Record<string, any>)?.signedTransaction || value as Record<string, any>;
   if (
-    !signed || typeof signed.txID !== "string" || !signed.raw_data ||
+    !signed || typeof signed.txID !== "string" || typeof signed.raw_data_hex !== "string" || !signed.raw_data ||
     !Array.isArray(signed.signature) || signed.signature.length !== 1
   ) {
     throw new EnergyPurchaseError(
@@ -514,7 +611,28 @@ function normalizeSignedTransaction(value: unknown): Record<string, any> {
       "Signer must return one signed TRX transfer with txID, raw_data, and exactly one signature.",
     );
   }
+  if (normalizeHex(signed.txID) !== normalizeHex(expected.txID) ||
+      normalizeHex(signed.raw_data_hex) !== normalizeHex(expected.raw_data_hex)) {
+    throw new EnergyPurchaseError(
+      "SIGNED_TX_MISMATCH",
+      "Signer returned a transaction that does not match the confirmed payer, recipient, amount, and request memo.",
+    );
+  }
   return signed;
+}
+
+function signedTransactionForWire(signed: Record<string, any>): SignedEnergyPurchaseRequest["signed_transaction"] {
+  return {
+    txID: normalizeHex(signed.txID),
+    raw_data_hex: normalizeHex(signed.raw_data_hex),
+    signature: [...signed.signature],
+    visible: signed.visible === true,
+  };
+}
+
+function shouldClearSignedRisk(error: EnergyPurchaseError): boolean {
+  return error.isBusinessError && Number(error.status) >= 400 && Number(error.status) < 500 &&
+    DETERMINISTIC_PRE_BROADCAST_CODES.has(error.code);
 }
 
 export class EnergyPurchaseApi {
@@ -528,6 +646,8 @@ export class EnergyPurchaseApi {
   private readonly orderPollTimeoutMs: number;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly now: () => number;
+  private readonly explicitNetworkFingerprint: string;
+  private readonly activeIntentTokens = new Map<string, string>();
 
   constructor(options: EnergyPurchaseApiOptions = {}) {
     this.baseUrl = resolveBaseUrl(options.baseUrl);
@@ -540,6 +660,7 @@ export class EnergyPurchaseApi {
     this.orderPollTimeoutMs = options.orderPollTimeoutMs ?? 150000;
     this.sleep = options.sleep || (ms => new Promise(resolve => setTimeout(resolve, ms)));
     this.now = options.now || Date.now;
+    this.explicitNetworkFingerprint = options.networkFingerprint?.trim() || "";
   }
 
   private async request<T>(method: string, apiPath: string, options: {
@@ -578,18 +699,21 @@ export class EnergyPurchaseApi {
         cause,
       });
     }
+    if (!response.ok) {
+      const code = typeof envelope.code === "string" && envelope.code.length > 0
+        ? String(envelope.code).toUpperCase()
+        : "HTTP_ERROR";
+      throw new EnergyPurchaseError(code, envelope.msg || `Energy purchase API returned HTTP ${response.status}.`, {
+        status: response.status,
+        isBusinessError: response.status >= 400 && response.status < 500 && code !== "HTTP_ERROR",
+        retryable: response.status >= 500,
+      });
+    }
     if (envelope.code !== "0") {
       const business = typeof envelope.code === "string" && envelope.code.length > 0;
       throw new EnergyPurchaseError(business ? String(envelope.code).toUpperCase() : "INVALID_RESPONSE", envelope.msg, {
         status: response.status,
         isBusinessError: business,
-        retryable: !business && response.status >= 500,
-      });
-    }
-    if (!response.ok) {
-      throw new EnergyPurchaseError("HTTP_ERROR", `Energy purchase API returned HTTP ${response.status}.`, {
-        status: response.status,
-        retryable: response.status >= 500,
       });
     }
     return envelope.data as T;
@@ -607,29 +731,23 @@ export class EnergyPurchaseApi {
     return this.request("GET", ENERGY_PURCHASE_PATHS.poolHealth);
   }
 
-  async quote(receivers: string[], energyPerReceiver: number, config?: EnergyPurchaseConfig): Promise<EnergyPurchaseQuote> {
+  async quote(
+    receivers: string[],
+    energyPerReceiver: number,
+    duration: string,
+    config?: EnergyPurchaseConfig,
+  ): Promise<EnergyPurchaseQuote> {
     const liveConfig = config || await this.getConfig();
-    validateQuoteInput(receivers, energyPerReceiver, liveConfig);
-    const quote = await this.request<EnergyPurchaseQuote>("POST", ENERGY_PURCHASE_PATHS.quote, {
-      body: { receivers, energy_per_receiver: energyPerReceiver },
+    validateQuoteInput(receivers, energyPerReceiver, duration, liveConfig);
+    const quote = await this.request<Omit<EnergyPurchaseQuote, "payment_address">>("POST", ENERGY_PURCHASE_PATHS.quote, {
+      body: { receivers, quantity: energyPerReceiver, duration },
     });
     if (
-      typeof quote?.can_fulfill !== "boolean" || !Number.isSafeInteger(Number(quote?.amount_sun)) ||
-      Number(quote.amount_sun) <= 0 || typeof quote.pay_address !== "string"
+      !Number.isSafeInteger(Number(quote?.total_sun)) || Number(quote.total_sun) <= 0
     ) {
       throw new EnergyPurchaseError("INVALID_RESPONSE", "Energy purchase quote is missing required fields.");
     }
-    validateAddress(quote.pay_address, "quote pay_address");
-    if (!quote.can_fulfill) {
-      throw new EnergyPurchaseError("POOL_INSUFFICIENT", "No single resource pool can fulfill the quote.", {
-        isBusinessError: true,
-        details: {
-          requiredEnergy: receivers.length * energyPerReceiver,
-          maxSingleOrderEnergy: quote.max_single_order_energy ?? null,
-        },
-      });
-    }
-    return quote;
+    return { ...quote, payment_address: liveConfig.payment_address } as EnergyPurchaseQuote;
   }
 
   getOrder(orderId: string | number, token?: string): Promise<Record<string, any>> {
@@ -638,13 +756,12 @@ export class EnergyPurchaseApi {
   }
 
   getHistory(address: string, options: { page?: number; size?: number } = {}): Promise<Record<string, any>> {
-    validateAddress(address, "history address");
-    const query = new URLSearchParams({ address });
-    if (options.size !== undefined) {
-      query.set("page", String(positiveInteger(options.page ?? 1, "page")));
-      query.set("size", String(positiveInteger(options.size, "size")));
-    }
-    return this.request("GET", `${ENERGY_PURCHASE_PATHS.history}?${query}`);
+    void address;
+    void options;
+    return Promise.reject(new EnergyPurchaseError(
+      "UNSUPPORTED_OPERATION",
+      "The authoritative energy API has no order-history endpoint; persist the returned order ID and access token.",
+    ));
   }
 
   getPaymentRisks(payerAddress: string): EnergyPaymentRisk[] {
@@ -668,20 +785,31 @@ export class EnergyPurchaseApi {
 
   async reconcilePaymentRisks(payerAddress: string, network = "mainnet"): Promise<EnergyPaymentRisk[]> {
     const tronWeb = getTronWeb(network);
+    const provider = this.explicitNetworkFingerprint || providerFingerprint(tronWeb);
+    const networkFingerprint = provider ? `api=${this.baseUrl};provider=${provider}` : "";
     const risks = this.getPaymentRisks(payerAddress);
-    let history: Record<string, any> | null = null;
     for (const risk of risks) {
-      const lookup = await this.lookupTransaction(tronWeb, risk.signedTxId);
-      if (lookup === "found") {
+      if (!risk.networkFingerprint || !risk.signedRequest ||
+          !networkFingerprint || risk.networkFingerprint !== networkFingerprint) {
+        continue;
+      }
+      try {
+        risk.recoveredOrder = await this.request<Record<string, unknown>>("POST", ENERGY_PURCHASE_PATHS.buy, {
+          body: risk.signedRequest,
+        });
         risk.paymentConfirmed = true;
         this.riskStore.save(risk);
-        history ||= await this.getHistory(payerAddress).catch(() => null);
-        const rows = Array.isArray(history?.rows) ? history.rows : [];
-        if (rows.some(row => row.payment_tx_id === risk.signedTxId)) {
+      } catch (error) {
+        const typed = error as EnergyPurchaseError;
+        if (typed.code === "TX_ALREADY_CLAIMED") {
+          risk.paymentConfirmed = true;
+          this.riskStore.save(risk);
+        } else if (shouldClearSignedRisk(typed)) {
           this.riskStore.remove(payerAddress, risk.signedTxId);
+        } else if (await this.lookupTransaction(tronWeb, risk.signedTxId) === "found") {
+          risk.paymentConfirmed = true;
+          this.riskStore.save(risk);
         }
-      } else if (lookup === "not_found" && this.now() >= risk.expiresAt) {
-        this.riskStore.remove(payerAddress, risk.signedTxId);
       }
     }
     return this.riskStore.list(payerAddress);
@@ -692,6 +820,9 @@ export class EnergyPurchaseApi {
     payerAddress: string,
     payAddress: string,
     amountSun: number,
+    receivers: string[],
+    energyPerReceiver: number,
+    duration: string,
     network: string,
   ): Promise<Record<string, any>> {
     validateAddress(payerAddress, "payerAddress");
@@ -709,8 +840,9 @@ export class EnergyPurchaseApi {
         }
       }
     }
-    const description = `Pay ${safeAmount / 1e6} TRX for JustLend energy. Sign only; the configured backend broadcasts.`;
-    return normalizeSignedTransaction(await signTransactionWithWallet(unsigned, description, network));
+    unsigned = attachMemo(tronWeb, unsigned, consumerBuyMemo(receivers, energyPerReceiver, duration));
+    const description = `Pay ${safeAmount / 1e6} TRX to ${payAddress} for JustLend energy on ${network}. Sign only; the configured backend broadcasts.`;
+    return normalizeSignedTransaction(await signTransactionWithWallet(unsigned, description, network), unsigned);
   }
 
   private async pollOrder(orderId: string | number, token?: string): Promise<Record<string, any> | null> {
@@ -733,6 +865,7 @@ export class EnergyPurchaseApi {
     energyPerReceiver: number;
     duration: string;
     expectedAmountSun: number;
+    expectedPayAddress: string;
     network?: string;
   }): Promise<Record<string, unknown>> {
     const payerAddress = await getWalletAddress();
@@ -749,11 +882,17 @@ export class EnergyPurchaseApi {
     let intentToken: string | undefined;
     try {
       intentToken = this.riskStore.acquireIntent(payerAddress, Date.now() + PAYMENT_INTENT_TTL_MS);
+      this.activeIntentTokens.set(payerAddress, intentToken);
       return await this.purchaseWithIntent(input, payerAddress);
     } finally {
       try {
-        if (intentToken !== undefined) this.riskStore.releaseIntent(payerAddress, intentToken);
+        if (intentToken !== undefined && this.activeIntentTokens.get(payerAddress) === intentToken) {
+          this.riskStore.releaseIntent(payerAddress, intentToken);
+        }
       } finally {
+        if (this.activeIntentTokens.get(payerAddress) === intentToken) {
+          this.activeIntentTokens.delete(payerAddress);
+        }
         activePayers.delete(payerAddress);
       }
     }
@@ -764,65 +903,113 @@ export class EnergyPurchaseApi {
     energyPerReceiver: number;
     duration: string;
     expectedAmountSun: number;
+    expectedPayAddress: string;
     network?: string;
   }, payerAddress: string): Promise<Record<string, unknown>> {
     const network = input.network || "mainnet";
     const tronWeb = await getSigningClient(network);
+    const existedBeforeReconciliation = this.getPaymentRisks(payerAddress);
     const existing = await this.reconcilePaymentRisks(payerAddress, network);
-    if (existing.length) {
+    if (existedBeforeReconciliation.length || existing.length) {
       const error = new EnergyPurchaseError(
         "PAYMENT_RISK_UNRESOLVED",
-        "A previous payment has an unknown result. Inspect history/chain state before signing another payment.",
+        existing[0]?.paymentConfirmed
+          ? "A previous payment was recovered. Record its order result and resolve the marker before signing another payment."
+          : "A previous payment has an unknown result. Reconcile the exact signed request before signing another payment.",
       );
-      error.paymentRisk = existing[0];
+      error.paymentRisk = existing[0] || existedBeforeReconciliation[0];
       throw error;
     }
 
     const config = await this.getConfig();
-    const durations = Array.isArray(config.durations) ? config.durations.filter(item => typeof item === "string" && item.trim()) : [];
+    const durations = Array.isArray(config.supported_durations) ? config.supported_durations.filter(item => typeof item === "string" && item.trim()) : [];
     if (!durations.includes(input.duration)) {
       throw new EnergyPurchaseError("INVALID_DURATION", "duration must come from the live /v1/config durations list.");
     }
-    const quote = await this.quote(input.receivers, input.energyPerReceiver, config);
+    const quote = await this.quote(input.receivers, input.energyPerReceiver, input.duration, config);
     const confirmedAmount = positiveInteger(input.expectedAmountSun, "expectedAmountSun");
-    if (quote.amount_sun !== confirmedAmount) {
+    if (quote.total_sun !== confirmedAmount) {
       throw new EnergyPurchaseError("AMOUNT_CHANGED", "The authoritative quote differs from the user-confirmed amount.", {
-        details: { expectedAmountSun: confirmedAmount, amountSun: quote.amount_sun },
+        details: { expectedAmountSun: confirmedAmount, amountSun: quote.total_sun },
       });
     }
+    validateAddress(input.expectedPayAddress, "expectedPayAddress");
+    if (quote.payment_address !== input.expectedPayAddress) {
+      throw new EnergyPurchaseError(
+        "PAYMENT_ADDRESS_CHANGED",
+        "The configured payment address differs from the exact address confirmed by the user.",
+      );
+    }
+    const provider = this.explicitNetworkFingerprint || providerFingerprint(tronWeb);
+    if (!provider) {
+      throw new EnergyPurchaseError("NETWORK_FINGERPRINT_REQUIRED", "A fixed network/provider fingerprint is required.");
+    }
+    const networkFingerprint = `api=${this.baseUrl};provider=${provider}`;
     const balanceSun = BigInt(await tronWeb.trx.getBalance(payerAddress));
-    if (balanceSun < BigInt(quote.amount_sun)) {
+    if (balanceSun < BigInt(quote.total_sun)) {
       throw new EnergyPurchaseError(
         "INSUFFICIENT_BALANCE",
-        `Payment requires ${quote.amount_sun / 1e6} TRX before bandwidth cost.`,
+        `Payment requires ${quote.total_sun / 1e6} TRX before bandwidth cost.`,
       );
     }
 
-    const signed = await this.buildAndSignPayment(tronWeb, payerAddress, quote.pay_address, quote.amount_sun, network);
+    let signed: Record<string, any>;
+    try {
+      signed = await this.buildAndSignPayment(
+        tronWeb,
+        payerAddress,
+        quote.payment_address,
+        quote.total_sun,
+        input.receivers,
+        input.energyPerReceiver,
+        input.duration,
+        network,
+      );
+    } catch (cause) {
+      // Signing may have completed before the bridge/provider response was
+      // lost. Preserve the payer intent until its conservative TTL.
+      this.activeIntentTokens.delete(payerAddress);
+      throw new EnergyPurchaseError(
+        "SIGNING_RESULT_UNKNOWN",
+        "The signer result is unknown. The payer remains blocked until the intent is reviewed.",
+        { cause },
+      );
+    }
     const signedDeadline = Number.isFinite(Number(signed.raw_data?.expiration))
       ? Number(signed.raw_data.expiration)
       : this.now() + ORDER_TTL_MS;
     const retryDeadline = Math.min(signedDeadline, this.now() + this.paymentRetryTimeoutMs);
+    const signedRequest: SignedEnergyPurchaseRequest = {
+      receivers: [...input.receivers],
+      energy: input.energyPerReceiver,
+      duration: input.duration,
+      payer_address: payerAddress,
+      signed_transaction: signedTransactionForWire(signed),
+    };
+    const txId = signedRequest.signed_transaction.txID;
     const risk: EnergyPaymentRisk = {
       payerAddress,
-      signedTxId: signed.txID,
+      signedTxId: txId,
       createdAt: this.now(),
       expiresAt: signedDeadline,
       paymentConfirmed: false,
+      networkFingerprint,
+      signedRequest,
     };
+    const intentToken = this.activeIntentTokens.get(payerAddress);
+    if (intentToken && typeof this.riskStore.finalizeIntent === "function") {
+      this.activeIntentTokens.delete(payerAddress);
+      this.riskStore.finalizeIntent(payerAddress, intentToken, risk);
+    } else {
+      this.riskStore.save(risk);
+    }
 
     let order: Record<string, any> | null = null;
     while (!order) {
       this.riskStore.save(risk);
       try {
         order = await this.request("POST", ENERGY_PURCHASE_PATHS.buy, {
-          body: {
-            receivers: input.receivers,
-            energy_per_receiver: input.energyPerReceiver,
-            duration: input.duration,
-            payer_address: payerAddress,
-            signed_transaction: signed,
-          },
+          body: signedRequest,
         });
       } catch (error) {
         const typed = error as EnergyPurchaseError;
@@ -831,16 +1018,16 @@ export class EnergyPurchaseApi {
             risk.paymentConfirmed = true;
             this.riskStore.save(risk);
             typed.paymentRisk = risk;
-          } else {
-            this.riskStore.remove(payerAddress, signed.txID);
+          } else if (shouldClearSignedRisk(typed)) {
+            this.riskStore.remove(payerAddress, txId);
           }
           throw typed;
         }
         if (this.now() >= retryDeadline) {
-          if (await this.lookupTransaction(tronWeb, signed.txID) === "found") {
+          if (await this.lookupTransaction(tronWeb, txId) === "found") {
             risk.paymentConfirmed = true;
             this.riskStore.save(risk);
-            return { ok: true, orderId: null, txHash: signed.txID, state: "pending", confirmedOnChain: true };
+            return { ok: true, orderId: null, txHash: txId, state: "pending", confirmedOnChain: true };
           }
           const unknown = new EnergyPurchaseError(
             "PAYMENT_RESULT_UNKNOWN",
@@ -854,11 +1041,16 @@ export class EnergyPurchaseApi {
       }
     }
 
-    this.riskStore.remove(payerAddress, signed.txID);
-    const orderId = order.id;
-    const txHash = order.tx_id || signed.txID;
-    const detail = await this.pollOrder(orderId, order.access_token);
-    const state = detail?.state || order.state || "pending";
+    const batch = order.batch;
+    const payment = order.payment;
+    if (!batch || typeof batch.id !== "string" || typeof batch.access_token !== "string") {
+      throw new EnergyPurchaseError("INVALID_RESPONSE", "Energy purchase response is missing batch or access token.");
+    }
+    this.riskStore.remove(payerAddress, txId);
+    const orderId = batch.id;
+    const txHash = payment?.tx_hash || txId;
+    const detail = await this.pollOrder(orderId, batch.access_token);
+    const state = detail?.state || batch.state || "pending";
     if (state === "failed" || state === "expired") {
       throw new EnergyPurchaseError("DELIVERY_FAILED", "Payment was accepted but energy delivery failed.", {
         details: { orderId, txHash, state, detail },
@@ -879,13 +1071,10 @@ export async function getEnergyPurchaseConfig() {
   return { config, price, pool };
 }
 
-export const quoteEnergyPurchase = (receivers: string[], energyPerReceiver: number) =>
-  api().quote(receivers, energyPerReceiver);
+export const quoteEnergyPurchase = (receivers: string[], energyPerReceiver: number, duration: string) =>
+  api().quote(receivers, energyPerReceiver, duration);
 
 export const getEnergyPurchaseOrder = (orderId: string | number, token?: string) => api().getOrder(orderId, token);
-
-export const getEnergyPurchaseHistory = (address: string, page = 1, size = 20) =>
-  api().getHistory(address, { page, size });
 
 export const getEnergyPaymentRisks = (address: string, network = "mainnet") =>
   api().reconcilePaymentRisks(address, network);
@@ -895,6 +1084,7 @@ export const buyEnergyDirect = (input: {
   energyPerReceiver: number;
   duration: string;
   expectedAmountSun: number;
+  expectedPayAddress: string;
   network?: string;
 }) => api().purchase(input);
 

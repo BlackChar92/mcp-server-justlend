@@ -52,10 +52,8 @@ Beyond JustLend-specific operations, the server also exposes a full set of **gen
 - Paginated REST wrappers for V1 lending / sTRX / voting / energy-rental / liquidation history, plus V2 Moolah records. Each endpoint's numeric action/op codes are enriched with human-readable names (`actionName` / `opName`) client-side so MCP tools are self-describing.
 
 #### Browser Wallet Signing
-- **TronLink Integration**: Connect TronLink (and other TIP-6963 browser wallets) via the `tronlink-signer` SDK
-- **Sign-only mode**: Server builds transactions, browser only signs — private keys never leave the wallet
-- **Confirmable transaction summaries**: Contract writes pass a deterministic summary (network, contract, function, args, callValue, feeLimit, simulation status) to the signer
-- **Dual wallet mode**: Users choose between `browser` (recommended) or `agent` (encrypted local storage)
+- **Disabled by default**: the legacy `tronlink-signer` loopback bridge lacks request-level authentication
+- **Safe current mode**: use agent-wallet with `AGENT_WALLET_PASSWORD`; browser signing will return only after an authenticated bridge is available
 
 #### General TRON Chain
 - **Balances**: TRX balance (with Sun/TRX conversion), TRC20/TRC1155 token balances
@@ -67,7 +65,7 @@ Beyond JustLend-specific operations, the server also exposes a full set of **gen
   - Transfer/approval paths validate recipient, token, and spender TRON addresses before signing
 - **Staking (Stake 2.0)**: Freeze/unfreeze TRX for BANDWIDTH or ENERGY, withdraw expired unfreeze
 - **Address Utilities**: Hex ↔ Base58 conversion, address validation, resolution
-- **Wallet**: Sign messages, secure key management via agent-wallet or browser wallet
+- **Wallet**: Sign messages and transactions through agent-wallet; the unauthenticated browser bridge is disabled
 
 ## Supported Markets
 
@@ -135,12 +133,11 @@ The script checks Node.js 20+, installs dependencies, builds the project, genera
 
 ### Wallet Setup (First-Use Choice)
 
-On first use, the server does **not** force a wallet choice. Users can explicitly choose between:
+On first use, select `agent` mode via `set_wallet_mode` with `mode="agent"`.
+Browser mode is disabled until its local bridge supports request-level authentication.
 
-1. `browser` mode via TronLink using `connect_browser_wallet`
-2. `agent` mode via encrypted local wallet using `set_wallet_mode` with `mode="agent"`
-
-Private keys are **never** stored in environment variables by default. If the user selects `agent` mode, the encrypted wallet is stored in `~/.agent-wallet/`.
+The encrypted wallet is stored in `~/.agent-wallet/`. Configure `AGENT_WALLET_PASSWORD`
+so its encryption password is not persisted beside the wallet data.
 
 You can also manage wallets via **CLI** or **MCP tools**:
 
@@ -164,8 +161,8 @@ npx agent-wallet activate <wallet-id>
 | Tool | Description |
 |------|-------------|
 | `get_wallet_address` | Shows current address, or returns first-use wallet selection guidance |
-| `connect_browser_wallet` | Connect TronLink / browser wallet for signing |
-| `set_wallet_mode` | Switch between `browser` and `agent` signing |
+| `connect_browser_wallet` | Returns a safety notice while the unauthenticated browser bridge is disabled |
+| `set_wallet_mode` | Select supported `agent` signing (`browser` currently returns an error) |
 | `get_wallet_mode` | Show current signing mode and addresses |
 | `list_wallets` | List all wallets with IDs, types, addresses |
 | `set_active_wallet` | Switch active wallet by ID |
@@ -408,7 +405,7 @@ mcp-server-justlend/
 │   │   │   └── shared.ts                     # Shared helpers
 │   │   ├── prompts.ts         # AI-guided workflow prompts (14: 10 V1-era + 4 V2 Moolah)
 │   │   ├── resources.ts       # Static protocol info resource
-│   │   ├── browser-signer.ts  # tronlink-signer SDK adapter (TronWalletSigner wrapper)
+│   │   ├── browser-signer.ts  # fail-closed compatibility shim; legacy bridge disabled
 │   │   └── services/
 │   │       ├── # — Global + utilities —
 │   │       ├── global.ts     # Global state: network, wallet mode
@@ -523,7 +520,7 @@ TEST_MOOLAH_WRITE=1 npx vitest run tests/integration/moolah-writes.nile.test.ts
 | HTTP/SSE returns `401 Unauthorized` | Missing/wrong `Authorization` header in HTTP mode | HTTP mode is fail-closed: set `MCP_API_KEY` on the server and send `Authorization: Bearer <key>` from the client. `/health` is the only unauthenticated path. |
 | Server refuses to start: `MCP_API_KEY is required in HTTP mode` | HTTP/SSE transport started without an API key | Set `MCP_API_KEY` (e.g. `openssl rand -base64 32`). stdio mode does not require it. |
 | `503 Too many active sessions` (HTTP) | Concurrent SSE sessions exceed `MCP_MAX_SESSIONS` (default 100) | Close idle clients or raise `MCP_MAX_SESSIONS`. Stale sessions are swept every 60s. |
-| Write tool errors with "no wallet" / wallet selection guide | No wallet mode chosen yet | Run `npx agent-wallet start` (agent mode), or call `connect_browser_wallet` (browser mode). Then retry. |
+| Write tool errors with "no wallet" / wallet selection guide | No wallet mode chosen yet | Run `npx agent-wallet start` or select agent mode, and configure `AGENT_WALLET_PASSWORD`. Then retry. |
 | Write tool fails with a pre-flight `REVERT` on mainnet | The transaction would revert on-chain (fail-closed by design) | Read the returned revert reason; fix the precondition (e.g. call `approve_underlying` before `supply`, `enter_market` before borrowing). The server does **not** broadcast simulated-revert txs on mainnet. |
 | `approval_required` returned from `supply`/`repay` | TRC20 allowance below the amount | Call `approve_underlying` first (prefer an exact amount; `max` is opt-in and grants unlimited allowance). |
 | Wrong network / unexpected addresses | Active network not set as intended | Check with `get_network`; switch with `set_network` (`mainnet` / `nile`). Nile is the testnet for safe write testing. |

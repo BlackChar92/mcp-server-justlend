@@ -3,6 +3,21 @@ import { z } from "zod";
 import * as services from "../services/index.js";
 import { sanitizeError, tronAddress, toolError } from "./shared.js";
 
+function publicPaymentRisk(risk: any): Record<string, unknown> | undefined {
+  if (!risk || typeof risk !== "object") return undefined;
+  return {
+    payerAddress: risk.payerAddress,
+    signedTxId: risk.signedTxId,
+    createdAt: risk.createdAt,
+    expiresAt: risk.expiresAt,
+    paymentConfirmed: risk.paymentConfirmed === true,
+    networkFingerprint: risk.networkFingerprint,
+    replayAvailable: Boolean(risk.signedRequest),
+    recoveredOrderId: risk.recoveredOrder?.batch?.id,
+    recoveredState: risk.recoveredOrder?.batch?.state,
+  };
+}
+
 function energyPurchaseToolError(error: any) {
   if (!error?.code) return toolError(error);
   const payload: Record<string, unknown> = {
@@ -11,7 +26,7 @@ function energyPurchaseToolError(error: any) {
     retryable: error.retryable === true,
   };
   if (error.details !== undefined) payload.details = error.details;
-  if (error.paymentRisk) payload.paymentRisk = error.paymentRisk;
+  if (error.paymentRisk) payload.paymentRisk = publicPaymentRisk(error.paymentRisk);
   return { content: [{ type: "text" as const, text: JSON.stringify(payload, null, 2) }], isError: true };
 }
 
@@ -49,12 +64,13 @@ export function registerEnergyTools(server: McpServer) {
       inputSchema: {
         receiverAddresses: z.array(tronAddress("Address that will receive energy")).min(1).describe("One or more energy receiver addresses"),
         energyPerReceiver: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).describe("Energy amount for each receiver"),
+        duration: z.string().min(1).describe("Duration exactly as advertised by get_energy_purchase_config"),
       },
       annotations: { title: "Quote Energy Purchase", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ receiverAddresses, energyPerReceiver }) => {
+    async ({ receiverAddresses, energyPerReceiver, duration }) => {
       try {
-        const quote = await services.quoteEnergyPurchase(receiverAddresses, energyPerReceiver);
+        const quote = await services.quoteEnergyPurchase(receiverAddresses, energyPerReceiver, duration);
         return { content: [{ type: "text", text: JSON.stringify(quote, null, 2) }] };
       } catch (error: any) {
         return energyPurchaseToolError(error);
@@ -83,28 +99,6 @@ export function registerEnergyTools(server: McpServer) {
   );
 
   server.registerTool(
-    "get_energy_purchase_history",
-    {
-      description: "Get settled energy direct-purchase history for a payer address.",
-      inputSchema: {
-        address: tronAddress("Payer address. Default: configured wallet").optional(),
-        page: z.number().int().positive().optional().describe("Page number, 1-based. Default: 1"),
-        pageSize: z.number().int().positive().max(100).optional().describe("Rows per page. Default: 20"),
-      },
-      annotations: { title: "Energy Purchase History", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    },
-    async ({ address, page = 1, pageSize = 20 }) => {
-      try {
-        const payer = address || await services.getWalletAddress();
-        const history = await services.getEnergyPurchaseHistory(payer, page, pageSize);
-        return { content: [{ type: "text", text: JSON.stringify(history, null, 2) }] };
-      } catch (error: any) {
-        return energyPurchaseToolError(error);
-      }
-    },
-  );
-
-  server.registerTool(
     "get_energy_payment_risk",
     {
       description:
@@ -125,7 +119,7 @@ export function registerEnergyTools(server: McpServer) {
             text: JSON.stringify({
               address: payer,
               blocked: risks.length > 0,
-              risks,
+              risks: risks.map(publicPaymentRisk),
               instruction: risks.length
                 ? "Do not create another signed payment until these transactions are reconciled."
                 : "No unresolved payment risk.",
@@ -154,19 +148,21 @@ export function registerEnergyTools(server: McpServer) {
         receiverAddresses: z.array(tronAddress("Address that will receive energy")).min(1).describe("One or more energy receiver addresses"),
         energyPerReceiver: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).describe("Energy amount for each receiver"),
         duration: z.string().min(1).describe("Duration exactly as advertised by get_energy_purchase_config"),
-        expectedAmountSun: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).describe("Exact amount_sun from the quote explicitly confirmed by the user"),
+        expectedAmountSun: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).describe("Exact total_sun from the quote explicitly confirmed by the user"),
+        expectedPayAddress: tronAddress("Exact payment_address from the quote explicitly confirmed by the user"),
         confirmPayment: z.literal(true).describe("Must be true only after the user explicitly confirms this value-moving payment"),
         network: z.string().optional().describe("Signing network. Default: configured network"),
       },
       annotations: { title: "Buy Energy Direct", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     },
-    async ({ receiverAddresses, energyPerReceiver, duration, expectedAmountSun, network = services.getGlobalNetwork() }) => {
+    async ({ receiverAddresses, energyPerReceiver, duration, expectedAmountSun, expectedPayAddress, network = services.getGlobalNetwork() }) => {
       try {
         const result = await services.buyEnergyDirect({
           receivers: receiverAddresses,
           energyPerReceiver,
           duration,
           expectedAmountSun,
+          expectedPayAddress,
           network,
         });
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };

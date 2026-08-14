@@ -204,7 +204,9 @@ The server signs the native TRX payment but never broadcasts it locally. The con
 validates and may broadcast the signed transaction. Ambiguous submissions retry only the same signed
 transaction, and public transaction identifiers—not signed payloads—are stored with `0600` permissions
 under `~/.mcp-server-justlend/energy-payment-risks.json`. Use `get_energy_payment_risk` before any new
-payment when a previous result is uncertain.
+payment when a previous result is uncertain. Risk reconciliation reports `chainStatus` as
+`observed`/`included` from FullNode first and `solidified` only after SolidityNode finality; RPC
+errors or a missing transaction never authorize a newly signed payment.
 
 ### Client Configuration
 

@@ -90,6 +90,8 @@ function tronWebHarness() {
     },
     trx: {
       getBalance: vi.fn(async () => 10_000_000),
+      getUnconfirmedTransactionInfo: vi.fn(async () => ({})),
+      getTransactionInfo: vi.fn(async () => ({})),
       getTransaction: vi.fn(async () => null),
     },
   };
@@ -360,5 +362,62 @@ describe("energy direct-purchase service", () => {
     });
 
     await expect(api.reconcilePaymentRisks(PAYER)).resolves.toHaveLength(1);
+  });
+
+  it("records FullNode inclusion before SolidityNode finality", async () => {
+    const tronWeb = tronWebHarness();
+    tronWeb.trx.getUnconfirmedTransactionInfo.mockResolvedValue({
+      id: TX_ID,
+      blockNumber: 100,
+      receipt: { result: "SUCCESS" },
+    });
+    vi.mocked(getTronWeb).mockReturnValue(tronWeb as any);
+    const store = new MemoryRiskStore();
+    const api = new EnergyPurchaseApi({
+      baseUrl: "https://energy.example",
+      networkFingerprint: "mainnet-provider",
+      fetch: vi.fn(async () => new Response(JSON.stringify({
+        code: "wallet_rpc_error",
+        msg: "retry the same transaction",
+        data: null,
+      }), { status: 502, headers: { "content-type": "application/json" } })),
+      riskStore: store,
+    });
+    store.risks.push({
+      payerAddress: PAYER,
+      signedTxId: TX_ID,
+      createdAt: 1,
+      expiresAt: 300001,
+      paymentConfirmed: false,
+      chainStatus: "unknown",
+      chainExecution: "unknown",
+      networkFingerprint: `api=${api.baseUrl};provider=mainnet-provider`,
+      signedRequest: {
+        receivers: [RECEIVER],
+        energy: 65000,
+        duration: "1h",
+        payer_address: PAYER,
+        signed_transaction: { txID: TX_ID, raw_data_hex: RAW_HEX, signature: ["aa"], visible: false },
+      },
+    });
+
+    await expect(api.reconcilePaymentRisks(PAYER)).resolves.toMatchObject([{
+      paymentConfirmed: false,
+      chainStatus: "included",
+      chainExecution: "success",
+    }]);
+
+    tronWeb.trx.getTransactionInfo.mockResolvedValue({
+      id: TX_ID,
+      blockNumber: 100,
+      receipt: { result: "SUCCESS" },
+    });
+    await expect(api.reconcilePaymentRisks(PAYER)).resolves.toMatchObject([{
+      paymentConfirmed: true,
+      chainStatus: "solidified",
+      chainExecution: "success",
+    }]);
+    expect(tronWeb.trx.getUnconfirmedTransactionInfo).toHaveBeenCalledWith(TX_ID);
+    expect(tronWeb.trx.getTransactionInfo).toHaveBeenCalledWith(TX_ID);
   });
 });

@@ -11,6 +11,8 @@ function publicPaymentRisk(risk: any): Record<string, unknown> | undefined {
     createdAt: risk.createdAt,
     expiresAt: risk.expiresAt,
     paymentConfirmed: risk.paymentConfirmed === true,
+    chainStatus: risk.chainStatus || "unknown",
+    chainExecution: risk.chainExecution || "unknown",
     networkFingerprint: risk.networkFingerprint,
     replayAvailable: Boolean(risk.signedRequest),
     recoveredOrderId: risk.recoveredOrder?.batch?.id,

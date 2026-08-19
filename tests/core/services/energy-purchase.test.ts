@@ -165,6 +165,45 @@ describe("energy direct-purchase service", () => {
     }
   });
 
+  it("holds the shared mutation lock while releasing and finalizing intents", () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-energy-intent-lifecycle-"));
+    const file = path.join(directory, "risks.json");
+    const intentPath = `${file}.${PAYER}.intent`;
+    const mutationLockPath = `${file}.mutation.lock`;
+    const store = new FileEnergyPaymentRiskStore(file);
+    const internals = store as unknown as {
+      readIntent(path: string): unknown;
+    };
+    const readIntent = internals.readIntent.bind(store);
+    const observedLockStates: boolean[] = [];
+    internals.readIntent = (target) => {
+      observedLockStates.push(fs.existsSync(mutationLockPath));
+      return readIntent(target);
+    };
+
+    try {
+      const releaseToken = store.acquireIntent(PAYER, Date.now() + 60_000);
+      store.releaseIntent(PAYER, releaseToken);
+      expect(fs.existsSync(intentPath)).toBe(false);
+
+      const finalizeToken = store.acquireIntent(PAYER, Date.now() + 60_000);
+      const risk: EnergyPaymentRisk = {
+        payerAddress: PAYER,
+        signedTxId: "finalized",
+        createdAt: 1,
+        expiresAt: 2,
+        paymentConfirmed: false,
+      };
+      store.finalizeIntent(PAYER, finalizeToken, risk);
+
+      expect(observedLockStates).toEqual([true, true]);
+      expect(fs.existsSync(intentPath)).toBe(false);
+      expect(store.list(PAYER)).toEqual([risk]);
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it("serializes the shared risk-file read-modify-write across payer stores", () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-energy-risk-lock-"));
     const file = path.join(directory, "risks.json");

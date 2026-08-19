@@ -242,10 +242,15 @@ export class FileEnergyPaymentRiskStore implements EnergyPaymentRiskStore {
   private mutateAll(mutator: (risks: EnergyPaymentRisk[]) => EnergyPaymentRisk[]): void {
     const token = this.acquireMutationLock();
     try {
-      this.writeAll(mutator(this.readAll()));
+      this.mutateAllLocked(mutator);
     } finally {
       this.releaseMutationLock(token);
     }
+  }
+
+  /** Apply a risk-file mutation while the caller owns the shared mutation lock. */
+  private mutateAllLocked(mutator: (risks: EnergyPaymentRisk[]) => EnergyPaymentRisk[]): void {
+    this.writeAll(mutator(this.readAll()));
   }
 
   list(payerAddress: string): EnergyPaymentRisk[] {
@@ -356,50 +361,66 @@ export class FileEnergyPaymentRiskStore implements EnergyPaymentRiskStore {
   }
 
   releaseIntent(payerAddress: string, token: string): void {
-    const intentPath = this.intentPath(payerAddress);
-    let existing: EnergyPaymentIntent;
+    const mutationToken = this.acquireMutationLock();
     try {
-      existing = this.readIntent(intentPath);
-    } catch (cause) {
-      if ((cause as EnergyPurchaseError).code === "PAYMENT_INTENT_LOCK_MISSING") return;
-      throw cause;
-    }
-    if (existing.token !== token) {
-      throw new EnergyPurchaseError(
-        "PAYMENT_INTENT_LOCK_LOST",
-        "The payment-intent lock owner changed unexpectedly. The current lock was preserved.",
-      );
-    }
-    try {
-      fs.unlinkSync(intentPath);
-    } catch (cause) {
-      if ((cause as NodeJS.ErrnoException).code === "ENOENT") return;
-      throw new EnergyPurchaseError(
-        "PAYMENT_INTENT_LOCK_UNAVAILABLE",
-        "Unable to release the payment-intent lock. New payments remain blocked.",
-        { cause },
-      );
+      const intentPath = this.intentPath(payerAddress);
+      let existing: EnergyPaymentIntent;
+      try {
+        existing = this.readIntent(intentPath);
+      } catch (cause) {
+        if ((cause as EnergyPurchaseError).code === "PAYMENT_INTENT_LOCK_MISSING") return;
+        throw cause;
+      }
+      if (existing.token !== token) {
+        throw new EnergyPurchaseError(
+          "PAYMENT_INTENT_LOCK_LOST",
+          "The payment-intent lock owner changed unexpectedly. The current lock was preserved.",
+        );
+      }
+      try {
+        fs.unlinkSync(intentPath);
+      } catch (cause) {
+        if ((cause as NodeJS.ErrnoException).code === "ENOENT") return;
+        throw new EnergyPurchaseError(
+          "PAYMENT_INTENT_LOCK_UNAVAILABLE",
+          "Unable to release the payment-intent lock. New payments remain blocked.",
+          { cause },
+        );
+      }
+    } finally {
+      this.releaseMutationLock(mutationToken);
     }
   }
 
   finalizeIntent(payerAddress: string, token: string, risk: EnergyPaymentRisk): void {
-    const intentPath = this.intentPath(payerAddress);
-    const existing = this.readIntent(intentPath);
-    if (existing.token !== token) {
-      throw new EnergyPurchaseError(
-        "PAYMENT_INTENT_LOCK_LOST",
-        "The payment-intent lock owner changed unexpectedly. No payment risk was published.",
-      );
-    }
-    this.save(risk);
+    const mutationToken = this.acquireMutationLock();
     try {
-      fs.unlinkSync(intentPath);
-    } catch (cause) {
-      throw new EnergyPurchaseError(
-        "PAYMENT_INTENT_LOCK_UNAVAILABLE",
-        "Payment risk was persisted but the payment-intent lock could not be released.",
-        { cause },
-      );
+      const intentPath = this.intentPath(payerAddress);
+      const existing = this.readIntent(intentPath);
+      if (existing.token !== token) {
+        throw new EnergyPurchaseError(
+          "PAYMENT_INTENT_LOCK_LOST",
+          "The payment-intent lock owner changed unexpectedly. No payment risk was published.",
+        );
+      }
+      this.mutateAllLocked((risks) => {
+        const remaining = risks.filter(item =>
+          !(item.payerAddress === risk.payerAddress && item.signedTxId === risk.signedTxId),
+        );
+        remaining.push(risk);
+        return remaining;
+      });
+      try {
+        fs.unlinkSync(intentPath);
+      } catch (cause) {
+        throw new EnergyPurchaseError(
+          "PAYMENT_INTENT_LOCK_UNAVAILABLE",
+          "Payment risk was persisted but the payment-intent lock could not be released.",
+          { cause },
+        );
+      }
+    } finally {
+      this.releaseMutationLock(mutationToken);
     }
   }
 

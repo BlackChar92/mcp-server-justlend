@@ -12,7 +12,7 @@ import { homedir } from "os";
 import { join } from "path";
 import { TronWeb } from "tronweb";
 import { getNetworkConfig } from "../chains.js";
-import { getGlobalNetwork, getSessionState, getWalletMode, type SessionState } from "./global.js";
+import { getGlobalNetwork, getSessionState, getWalletMode, setActiveWalletId, type SessionState } from "./global.js";
 import { TronWalletSigner } from "../browser-signer.js";
 
 export interface ConfiguredWallet {
@@ -35,9 +35,93 @@ export interface WalletStatus {
   message: string;
 }
 
-// Cached wallet instance from agent-wallet
-let _walletPromise: Promise<Wallet> | null = null;
-let _addressPromise: Promise<string> | null = null;
+interface SessionWalletCache {
+  walletPromise?: Promise<Wallet>;
+  addressPromise?: Promise<string>;
+}
+
+// Wallet objects and addresses are security context, so cache them by the
+// AsyncLocalStorage session object instead of in process-global variables.
+const sessionWalletCaches = new WeakMap<SessionState, SessionWalletCache>();
+
+function getSessionWalletCache(): SessionWalletCache {
+  const session = getSessionState();
+  let cache = sessionWalletCaches.get(session);
+  if (!cache) {
+    cache = {};
+    sessionWalletCaches.set(session, cache);
+  }
+  return cache;
+}
+
+function selectedWalletId(provider: ConfigWalletProvider, persistDefault = true): string | null {
+  const session = getSessionState();
+  const wallets = provider.listWallets();
+  if (wallets.length === 0) return null;
+
+  if (session.activeWalletId) {
+    if (!wallets.some(([id]) => id === session.activeWalletId)) {
+      throw new Error(`Wallet '${session.activeWalletId}' is not configured.`);
+    }
+    return session.activeWalletId;
+  }
+
+  const defaultId = provider.getActiveId() || wallets[0][0];
+  if (persistDefault) session.activeWalletId = defaultId;
+  return defaultId;
+}
+
+async function resolveSessionWallet(): Promise<Wallet> {
+  let provider: ReturnType<typeof resolveWalletProvider>;
+  try {
+    provider = resolveWalletProvider({ network: "tron" });
+  } catch {
+    // Keep the legacy auto-init fallback for resolver implementations that
+    // throw before a provider can be returned (and for older agent-wallet
+    // adapters used by downstream integrations).
+    const created = await autoInitWallet();
+    setActiveWalletId(created.walletId);
+    return resolveWallet({ network: "tron" });
+  }
+
+  if (!(provider instanceof ConfigWalletProvider)) {
+    try {
+      return await provider.getActiveWallet("tron");
+    } catch {
+      // Preserve the existing first-use auto-init behavior when no env wallet
+      // is configured, then resolve the newly created wallet for this session.
+      const created = await autoInitWallet();
+      setActiveWalletId(created.walletId);
+      try {
+        provider = resolveWalletProvider({ network: "tron" });
+      } catch {
+        return resolveWallet({ network: "tron" });
+      }
+      if (!(provider instanceof ConfigWalletProvider)) return provider.getActiveWallet("tron");
+    }
+  }
+
+  if (provider.listWallets().length === 0) {
+    const created = await autoInitWallet();
+    setActiveWalletId(created.walletId);
+    try {
+      provider = resolveWalletProvider({ network: "tron" });
+    } catch {
+      return resolveWallet({ network: "tron" });
+    }
+    if (!(provider instanceof ConfigWalletProvider)) {
+      return provider.getActiveWallet("tron");
+    }
+  }
+
+  const walletId = selectedWalletId(provider);
+  if (!walletId) throw new Error("No configured agent wallet is available.");
+  return provider.getWallet(walletId, "tron");
+}
+
+function clearSessionWalletCache(): void {
+  sessionWalletCaches.delete(getSessionState());
+}
 
 export function getBrowserSigner(): TronWalletSigner {
   const session = getSessionState();
@@ -106,26 +190,32 @@ function secureRuntimeSecretsFile(configDir: string): void {
 export async function autoInitWallet(): Promise<{ address: string; walletId: string; created: boolean }> {
   const configDir = getConfigDir();
 
-  // Try to resolve an existing wallet first
+  // Try to resolve an existing wallet first. Only the provider lookup and the
+  // "no wallet yet" case fall through to creation; a selected session wallet
+  // that disappeared must fail rather than silently creating another account.
+  let existingProvider: ReturnType<typeof resolveWalletProvider> | undefined;
   try {
-    const provider = resolveWalletProvider({ network: "tron" });
-    if (provider instanceof ConfigWalletProvider) {
-      const wallets = provider.listWallets();
-      if (wallets.length > 0) {
-        // Wallets already exist — just resolve and return active
-        const wallet = await provider.getActiveWallet("tron");
-        const address = await wallet.getAddress();
-        const activeId = provider.getActiveId() || wallets[0][0];
-        return { address, walletId: activeId, created: false };
-      }
-    } else {
-      // EnvWalletProvider — env-based wallet exists
-      const wallet = await provider.getActiveWallet("tron");
+    existingProvider = resolveWalletProvider({ network: "tron" });
+  } catch {
+    existingProvider = undefined;
+  }
+  if (existingProvider instanceof ConfigWalletProvider) {
+    const wallets = existingProvider.listWallets();
+    if (wallets.length > 0) {
+      const walletId = selectedWalletId(existingProvider);
+      if (!walletId) throw new Error("No configured agent wallet is available.");
+      const wallet = await existingProvider.getWallet(walletId, "tron");
+      const address = await wallet.getAddress();
+      return { address, walletId, created: false };
+    }
+  } else if (existingProvider) {
+    try {
+      const wallet = await existingProvider.getActiveWallet("tron");
       const address = await wallet.getAddress();
       return { address, walletId: "env", created: false };
+    } catch {
+      // No env wallet — proceed to create one.
     }
-  } catch {
-    // No existing wallet — proceed to create one
   }
 
   // ── Create a new encrypted wallet ──
@@ -179,12 +269,12 @@ export async function autoInitWallet(): Promise<{ address: string; walletId: str
   } as WalletConfig, { setActiveIfMissing: true });
 
   // 5. Resolve the new wallet and get its address
-  const wallet = await provider.getActiveWallet("tron");
+  const wallet = await provider.getWallet(walletId, "tron");
   const address = await wallet.getAddress();
 
-  // Clear any cached state so subsequent calls use the new wallet
-  _walletPromise = null;
-  _addressPromise = null;
+  // Bind the newly created wallet only to the current session.
+  setActiveWalletId(walletId);
+  clearSessionWalletCache();
 
   return { address, walletId, created: true };
 }
@@ -273,17 +363,13 @@ export async function importWallet(
     params: { secret_ref: finalId },
   } as WalletConfig, { setActiveIfMissing: true });
 
-  // If this is the first wallet or user wants to activate it
-  if (!provider.getActiveId() || existing.length === 0) {
-    provider.setActive(finalId);
-  }
-
   const wallet = await provider.getWallet(finalId, "tron");
   const address = await wallet.getAddress();
 
-  // Clear cache
-  _walletPromise = null;
-  _addressPromise = null;
+  // The importing session should use the wallet it just imported. Other HTTP
+  // sessions retain their own selection/cache.
+  setActiveWalletId(finalId);
+  clearSessionWalletCache();
 
   return { address, walletId: finalId };
 }
@@ -298,7 +384,9 @@ export async function getExistingAgentWalletAddress(): Promise<string | null> {
     if (provider instanceof ConfigWalletProvider) {
       const wallets = provider.listWallets();
       if (wallets.length === 0) return null;
-      const wallet = await provider.getActiveWallet("tron");
+      const walletId = selectedWalletId(provider);
+      if (!walletId) return null;
+      const wallet = await provider.getWallet(walletId, "tron");
       return wallet.getAddress();
     }
 
@@ -316,10 +404,14 @@ export async function getExistingAgentWalletAddress(): Promise<string | null> {
  * appear in environment variables or application memory.
  */
 export function getAgentWallet(): Promise<Wallet> {
-  if (!_walletPromise) {
-    _walletPromise = autoInitWallet().then(() => resolveWallet({ network: "tron" }));
+  const cache = getSessionWalletCache();
+  if (!cache.walletPromise) {
+    cache.walletPromise = resolveSessionWallet().catch((error) => {
+      cache.walletPromise = undefined;
+      throw error;
+    });
   }
-  return _walletPromise;
+  return cache.walletPromise;
 }
 
 /**
@@ -343,10 +435,14 @@ export async function getWalletAddress(): Promise<string> {
     );
   }
 
-  if (!_addressPromise) {
-    _addressPromise = autoInitWallet().then((result) => result.address);
+  const cache = getSessionWalletCache();
+  if (!cache.addressPromise) {
+    cache.addressPromise = getAgentWallet().then((wallet) => wallet.getAddress()).catch((error) => {
+      cache.addressPromise = undefined;
+      throw error;
+    });
   }
-  return _addressPromise;
+  return cache.addressPromise;
 }
 
 /** Alias matching the mcp-server-tron API. */
@@ -485,11 +581,11 @@ export async function checkWalletStatus(): Promise<WalletStatus> {
 
     if (provider instanceof ConfigWalletProvider) {
       const walletList = provider.listWallets();
-      const activeId = provider.getActiveId();
+      const activeId = selectedWalletId(provider);
       const wallets: WalletInfo[] = [];
 
-      for (const [id, config, isActive] of walletList) {
-        const info: WalletInfo = { id, type: config.type, isActive };
+      for (const [id, config] of walletList) {
+        const info: WalletInfo = { id, type: config.type, isActive: id === activeId };
         try {
           const w = await provider.getWallet(id, "tron");
           info.address = await w.getAddress();
@@ -564,10 +660,11 @@ export function setActiveWallet(walletId: string): { success: boolean; message: 
     if (!(provider instanceof ConfigWalletProvider)) {
       return { success: false, message: "Cannot set active wallet: using environment-based wallet provider." };
     }
-    provider.setActive(walletId);
-    // Clear cached wallet/address so next call uses the new active wallet
-    _walletPromise = null;
-    _addressPromise = null;
+    // Validate existence without mutating the provider-global durable active
+    // wallet. The selection belongs to the current HTTP/SSE session.
+    provider.getWalletConfig(walletId);
+    setActiveWalletId(walletId);
+    clearSessionWalletCache();
     return { success: true, message: `Active wallet set to "${walletId}".` };
   } catch (error: any) {
     return { success: false, message: `Failed to set active wallet: ${error.message}` };

@@ -274,6 +274,18 @@ export class FileEnergyPaymentRiskStore implements EnergyPaymentRiskStore {
 
   acquireIntent(payerAddress: string, expiresAt: number): string {
     validateAddress(payerAddress, "payerAddress");
+    // Stale intent recovery is a delete-then-create sequence. Serialize it
+    // with the same global store mutation lock used by risk RMW operations so
+    // another process cannot unlink a freshly-created intent from an old read.
+    const mutationToken = this.acquireMutationLock();
+    try {
+      return this.acquireIntentLocked(payerAddress, expiresAt);
+    } finally {
+      this.releaseMutationLock(mutationToken);
+    }
+  }
+
+  private acquireIntentLocked(payerAddress: string, expiresAt: number): string {
     const intentPath = this.intentPath(payerAddress);
     fs.mkdirSync(path.dirname(intentPath), { recursive: true, mode: 0o700 });
 

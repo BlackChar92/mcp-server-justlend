@@ -30,7 +30,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_wallet_address`
 
-**Get Wallet Address**  
+**Get Wallet Address**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: false
 - **Description**: Get the active wallet address. Returns browser wallet address if in browser mode, agent-wallet address if agent mode is selected, or a first-use wallet selection guide if no wallet mode has been chosen yet.
@@ -39,7 +39,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `list_wallets`
 
-**List Wallets**  
+**List Wallets**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: false
 - **Description**: List all wallets configured in agent-wallet. Shows wallet IDs, types, active status, and addresses.
@@ -48,7 +48,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `set_active_wallet`
 
-**Set Active Wallet**  
+**Set Active Wallet**
 - **Side effect**: 🟡 State-changing (Write) — changes local wallet/network config or starts an interaction; client should confirm
 - **annotations**: idempotent: true · openWorld: false
 - **Description**: Set the active wallet by wallet ID. Use list_wallets to see available wallet IDs.
@@ -60,7 +60,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `connect_browser_wallet`
 
-**Connect Browser Wallet**  
+**Connect Browser Wallet**
 - **Side effect**: 🟡 State-changing (Write) — changes local wallet/network config or starts an interaction; client should confirm
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Connect to a browser wallet (TronLink, TokenPocket) for signing transactions. RECOMMENDED: More secure than agent-wallet because private keys never leave your browser. This opens a browser window where the user must approve the connection. Tell the user to switch to their browser to approve. Blocks until the user acts or the request times out (5 min). After connecting, all write operations will use the browser wallet for signing.
@@ -72,7 +72,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `set_wallet_mode`
 
-**Set Wallet Mode**  
+**Set Wallet Mode**
 - **Side effect**: 🟡 State-changing (Write) — changes local wallet/network config or starts an interaction; client should confirm
 - **annotations**: idempotent: true · openWorld: false
 - **Description**: Switch wallet signing mode. 'browser' (recommended, more secure): uses TronLink in your browser — private keys never leave the browser. 'agent': uses encrypted key stored in ~/.agent-wallet/. Selecting agent mode for the first time will create an encrypted agent-wallet if needed. Browser mode requires connect_browser_wallet first.
@@ -84,7 +84,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_wallet_mode`
 
-**Get Wallet Mode**  
+**Get Wallet Mode**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: false
 - **Description**: Get the current wallet signing mode (browser, agent, or unset), connected address, and connection status.
@@ -93,7 +93,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `set_network`
 
-**Set Global Network**  
+**Set Global Network**
 - **Side effect**: 🟡 State-changing (Write) — changes local wallet/network config or starts an interaction; client should confirm
 - **annotations**: idempotent: true · openWorld: false
 - **Description**: Set the global default network used by all JustLend operations unless explicitly overridden.
@@ -105,7 +105,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_network`
 
-**Get Global Network**  
+**Get Global Network**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: false
 - **Description**: Get the current global default network used by all JustLend operations.
@@ -114,7 +114,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `transfer_trx`
 
-**Transfer TRX**  
+**Transfer TRX**
 - **Side effect**: 🟡 State-changing (Write) — changes local wallet/network config or starts an interaction; client should confirm
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Transfer TRX to another TRON address. Checks balance sufficiency (including gas) before sending. Typical cost: ~0 energy + ~270 bandwidth.
@@ -128,7 +128,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `transfer_trc20`
 
-**Transfer TRC20**  
+**Transfer TRC20**
 - **Side effect**: 🟡 State-changing (Write) — changes local wallet/network config or starts an interaction; client should confirm
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Transfer TRC20 tokens to another TRON address. You can pass a token symbol (e.g. 'USDT', 'JST', 'wstUSDT') or a contract address. Symbol resolution uses the server's known TRON token registry and JustLend underlying-token mappings. Amount is in human-readable units (e.g. '100' for 100 USDT). Checks balance sufficiency before sending.
@@ -146,7 +146,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_supported_networks`
 
-**Get Supported Networks**  
+**Get Supported Networks**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: false
 - **Description**: List all supported TRON networks for JustLend.
@@ -155,7 +155,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_supported_markets`
 
-**Get Supported Markets**  
+**Get Supported Markets**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: false
 - **Description**: List all available JustLend lending markets (jTokens) with their addresses and underlying assets.
@@ -167,7 +167,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_market_data`
 
-**Get Market Data**  
+**Get Market Data**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Get detailed market data for a specific JustLend market: supply/borrow APY, TVL, utilization, collateral factor, price, and status. Use jToken symbol like 'jUSDT' or 'jTRX'.
@@ -180,7 +180,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_all_markets`
 
-**Get All Markets**  
+**Get All Markets**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Get overview data for ALL JustLend markets including supply APY, borrow APY, mining rewards APY, underlying staking yield, total supply APY, and TVL. Mining APY is calculated from on-chain supply mining programs (USDD/TRX dual mining, WBTC mining, etc.). totalSupplyAPY = base supply APY + underlying staking APY + mining APY.
@@ -192,7 +192,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_protocol_summary`
 
-**Get Protocol Summary**  
+**Get Protocol Summary**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Get JustLend protocol-level info: Comptroller config, close factor, liquidation incentive, total markets.
@@ -204,7 +204,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_account_summary`
 
-**Get Account Summary**  
+**Get Account Summary**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Get a comprehensive view of a user's JustLend positions (supply, borrow, health factor). IMPORTANT: Returns a snapshot tied to a specific block. You MUST call this again after any transaction (supply, withdraw, etc.) to get updated balances and health factor.
@@ -217,7 +217,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `check_allowance`
 
-**Check Allowance**  
+**Check Allowance**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Check if the underlying TRC20 token has been approved for a jToken market. Must be approved before supply() or repay() for TRC20 markets. Not needed for jTRX. The returned 'allowance' is in human-readable token units (e.g. '1' means 1 USDT, not 1 raw unit). Compare it directly with the amount the user wants to supply/repay. 'allowanceUnit' indicates the token symbol.
@@ -232,7 +232,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_trx_balance`
 
-**Get TRX Balance**  
+**Get TRX Balance**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Get TRX balance for an address.
@@ -245,7 +245,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_token_balance`
 
-**Get Token Balance**  
+**Get Token Balance**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Get TRC20 token balance for an address. You can pass either a token symbol (e.g. 'USDD', 'USDT', 'ETH') or a contract address. When using a symbol, it resolves to the correct contract address from JustLend markets automatically. IMPORTANT: Always prefer using token symbols over raw addresses to avoid using outdated/wrong contract addresses. For example, use 'USDD' instead of a raw address — the old USDD (TPYmHEhy5n8TCEfYGqW2rPxsghSfzghPDn) is deprecated. The returned balance is already formatted in human-readable token units (decimals already applied). Do NOT divide the balance by decimals again.
@@ -260,7 +260,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_wallet_balances`
 
-**Get Wallet Token Balances (Batch)**  
+**Get Wallet Token Balances (Batch)**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Batch-fetch TRC20 token balances for a wallet across multiple JustLend markets in a single RPC call using the Multicall3 walletTokensBalance method. Returns human-readable balances (decimals already applied) for all specified tokens at once. Use this instead of calling get_token_balance repeatedly when you need balances for several tokens.
@@ -274,7 +274,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_mining_rewards`
 
-**Get Mining Rewards**  
+**Get Mining Rewards**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Get mining rewards for supply markets (USDD, WBTC, etc.). Returns unclaimed rewards, mining APY, and reward breakdown from API.
@@ -287,7 +287,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_usdd_mining_config`
 
-**Get USDD Mining Config**  
+**Get USDD Mining Config**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: false
 - **Description**: Get USDD mining configuration including mining periods, reward tokens (USDD/TRX dual mining), and schedule.
@@ -299,7 +299,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_wbtc_mining_config`
 
-**Get WBTC Mining Config**  
+**Get WBTC Mining Config**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: false
 - **Description**: Get WBTC mining configuration and supply mining activity details.
@@ -310,7 +310,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `supply`
 
-**Supply Assets**  
+**Supply Assets**
 - **Side effect**: 🔴 On-chain write · high-risk (Remote Write / Destructive) — signs and broadcasts a TRON transaction moving real assets; the client MUST require human confirmation (HITL) before executing
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Supply (deposit) assets into a JustLend market to earn interest. For TRC20 markets, you must first call approve_underlying. For jTRX, TRX is sent directly. Returns a jToken balance representing your deposit. Typical cost: ~100,000 energy + ~310 bandwidth for TRC20, ~80,000 energy + ~280 bandwidth for TRX. Use estimate_lending_energy tool for precise estimates before executing.
@@ -324,7 +324,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `withdraw`
 
-**Withdraw Assets**  
+**Withdraw Assets**
 - **Side effect**: 🔴 On-chain write · high-risk (Remote Write / Destructive) — signs and broadcasts a TRON transaction moving real assets; the client MUST require human confirmation (HITL) before executing
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Withdraw (redeem) supplied assets from a JustLend market. Specify the amount in underlying units. May fail if assets are used as collateral for active borrows. Typical cost: ~90,000 energy + ~300 bandwidth.
@@ -338,7 +338,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `withdraw_all`
 
-**Withdraw All**  
+**Withdraw All**
 - **Side effect**: 🔴 On-chain write · high-risk (Remote Write / Destructive) — signs and broadcasts a TRON transaction moving real assets; the client MUST require human confirmation (HITL) before executing
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Withdraw ALL supplied assets from a JustLend market by redeeming all jTokens. Typical cost: ~90,000 energy + ~300 bandwidth.
@@ -351,7 +351,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `borrow`
 
-**Borrow Assets**  
+**Borrow Assets**
 - **Side effect**: 🔴 On-chain write · high-risk (Remote Write / Destructive) — signs and broadcasts a TRON transaction moving real assets; the client MUST require human confirmation (HITL) before executing
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Borrow assets from a JustLend market against your collateral. You must have entered a market as collateral (enter_market) and have sufficient liquidity. Check your account_summary and health_factor before borrowing. Typical cost: ~100,000 energy + ~313 bandwidth.
@@ -365,7 +365,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `repay`
 
-**Repay Borrow**  
+**Repay Borrow**
 - **Side effect**: 🔴 On-chain write · high-risk (Remote Write / Destructive) — signs and broadcasts a TRON transaction moving real assets; the client MUST require human confirmation (HITL) before executing
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Repay borrowed assets to a JustLend market. For TRC20 markets, must have approved underlying first. Use amount='max' to repay the full outstanding borrow. Typical cost: ~80,000~90,000 energy + ~280~320 bandwidth (TRX costs less than TRC20).
@@ -379,7 +379,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `enter_market`
 
-**Enter Market (Enable Collateral)**  
+**Enter Market (Enable Collateral)**
 - **Side effect**: 🟡 State-changing (Write) — changes local wallet/network config or starts an interaction; client should confirm
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Enable a jToken market as collateral. Required before borrowing against supplied assets. Once entered, your supply in this market counts towards your borrowing capacity. Typical cost: ~80,000 energy + ~300 bandwidth.
@@ -392,7 +392,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `exit_market`
 
-**Exit Market (Disable Collateral)**  
+**Exit Market (Disable Collateral)**
 - **Side effect**: 🔴 On-chain write · high-risk (Remote Write / Destructive) — signs and broadcasts a TRON transaction moving real assets; the client MUST require human confirmation (HITL) before executing
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Disable a jToken market as collateral. Pre-checks: 1) market must have no outstanding borrows; 2) remaining collateral must still cover all borrows. Typical cost: ~50,000 energy + ~280 bandwidth.
@@ -405,7 +405,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `approve_underlying`
 
-**Approve Underlying Token**  
+**Approve Underlying Token**
 - **Side effect**: 🟡 State-changing (Write) — changes local wallet/network config or starts an interaction; client should confirm
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Approve the jToken contract to spend your underlying TRC20 tokens. Required before supply() or repay() for TRC20-backed markets (not needed for jTRX). Pass the EXACT amount you intend to use (recommended). Pass amount='max' for unlimited approval ONLY when the user explicitly opts in — it lets the jToken contract spend the user's entire balance, present and future, until revoked. Typical cost: ~23,000 energy + ~265 bandwidth.
@@ -419,7 +419,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `claim_rewards`
 
-**Claim Rewards**  
+**Claim Rewards**
 - **Side effect**: 🟡 State-changing (Write) — changes local wallet/network config or starts an interaction; client should confirm
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Claim accrued JustLend mining rewards for the configured wallet. Typical cost: ~60,000 energy + ~330 bandwidth.
@@ -431,7 +431,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `estimate_lending_energy`
 
-**Estimate Operation Resources**  
+**Estimate Operation Resources**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Estimate energy, bandwidth, and TRX cost for any JustLend operation BEFORE executing it. Covers ALL operations: supply, withdraw, withdraw_all, borrow, repay, approve, enter_market, exit_market, claim_rewards. Tries on-chain simulation first; falls back to historical typical values if simulation fails. Returns per-step breakdown (e.g. approve + mint for supply), total energy, total bandwidth, and estimated TRX cost. For supply/repay: automatically checks current allowance — if sufficient, the approve step is skipped. For approve: supports custom spender address (not just jToken). Use this tool whenever the user asks about gas/energy/cost for any lending operation.
@@ -450,7 +450,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_proposal_list`
 
-**Get Proposal List**  
+**Get Proposal List**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Get the list of JustLend DAO governance proposals. Returns proposals with their status (Active, Passed, Defeated, etc.), vote counts, and details. Sorted by newest first.
@@ -463,7 +463,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_user_vote_status`
 
-**Get User Vote Status**  
+**Get User Vote Status**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Get a user's voting status across all governance proposals. Shows which proposals the user has voted on, their vote amounts (for/against/abstain), and which proposals have withdrawable votes.
@@ -476,7 +476,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_vote_info`
 
-**Get Vote Info**  
+**Get Vote Info**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Get voting power info for a user: JST wallet balance, available (surplus) votes, total deposited votes, and votes currently cast in proposals. This is the key tool to check before voting — it shows how many votes are available to use.
@@ -489,7 +489,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_locked_votes`
 
-**Get Locked Votes**  
+**Get Locked Votes**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Get the number of votes a user has locked in a specific proposal.
@@ -503,7 +503,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `check_jst_allowance_for_voting`
 
-**Check JST Voting Allowance**  
+**Check JST Voting Allowance**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Check if JST has been approved for the WJST voting contract. Must be approved before depositing JST to get votes.
@@ -516,7 +516,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `approve_jst_for_voting`
 
-**Approve JST for Voting**  
+**Approve JST for Voting**
 - **Side effect**: 🟡 State-changing (Write) — changes local wallet/network config or starts an interaction; client should confirm
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Approve JST token for the WJST voting contract. Required before depositing JST to get voting power. Pass the EXACT amount you intend to deposit (recommended). Pass amount='max' for unlimited approval ONLY when the user explicitly opts in — it lets the WJST contract spend the user's entire JST balance, present and future, until revoked.
@@ -529,7 +529,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `deposit_jst_for_votes`
 
-**Deposit JST for Votes**  
+**Deposit JST for Votes**
 - **Side effect**: 🔴 On-chain write · high-risk (Remote Write / Destructive) — signs and broadcasts a TRON transaction moving real assets; the client MUST require human confirmation (HITL) before executing
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Deposit JST into the WJST contract to get voting power. Requires prior approval of JST for the WJST contract (use approve_jst_for_voting first). 1 JST = 1 Vote. Deposited JST can be withdrawn back after voting.
@@ -542,7 +542,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `withdraw_votes_to_jst`
 
-**Withdraw Votes to JST**  
+**Withdraw Votes to JST**
 - **Side effect**: 🔴 On-chain write · high-risk (Remote Write / Destructive) — signs and broadcasts a TRON transaction moving real assets; the client MUST require human confirmation (HITL) before executing
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Withdraw WJST back to JST. Can only withdraw votes that are not currently locked in active proposals. Use get_vote_info to check your surplus (available) votes before withdrawing.
@@ -555,7 +555,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `cast_vote`
 
-**Cast Vote**  
+**Cast Vote**
 - **Side effect**: 🔴 On-chain write · high-risk (Remote Write / Destructive) — signs and broadcasts a TRON transaction moving real assets; the client MUST require human confirmation (HITL) before executing
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Cast a vote on a governance proposal. You must have available votes (deposit JST first if needed). Support: true = vote FOR, false = vote AGAINST. You can add more votes to a proposal you already voted on.
@@ -570,7 +570,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `withdraw_votes_from_proposal`
 
-**Withdraw Votes from Proposal**  
+**Withdraw Votes from Proposal**
 - **Side effect**: 🔴 On-chain write · high-risk (Remote Write / Destructive) — signs and broadcasts a TRON transaction moving real assets; the client MUST require human confirmation (HITL) before executing
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Withdraw (reclaim) votes from a completed or canceled proposal. Only works for proposals that are no longer active. After withdrawing, the votes become available again for other proposals or can be converted back to JST.
@@ -585,7 +585,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_energy_rental_dashboard`
 
-**Energy Rental Dashboard**  
+**Energy Rental Dashboard**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Get JustLend energy rental market dashboard data including TRX price, exchange rate, total APY, energy per TRX, total supply, and other market parameters.
@@ -597,7 +597,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_energy_rental_params`
 
-**Energy Rental Parameters**  
+**Energy Rental Parameters**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Get on-chain energy rental parameters: liquidation threshold, fee ratio, min fee, total delegated/frozen TRX, max rentable amount, rent paused status, usage charge ratio.
@@ -609,7 +609,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `calculate_energy_rental_price`
 
-**Calculate Energy Rental Price**  
+**Calculate Energy Rental Price**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Calculate the cost to rent a specific amount of energy for a given duration. Returns TRX amount needed, rental rate, fee, total prepayment, security deposit, and daily cost. For NEW rentals: provide energyAmount and durationHours. For RENEWALS: provide energyAmount and receiverAddress. The tool auto-detects existing rentals and calculates the incremental cost (subtracting existing security deposit). durationHours is optional for renewals (defaults to 0 = no additional time).
@@ -624,7 +624,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_energy_rental_rate`
 
-**Energy Rental Rate**  
+**Energy Rental Rate**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Get the current energy rental rate for a given TRX amount. Returns rental rate, stable rate, and effective rate (max of both).
@@ -637,7 +637,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_user_energy_rental_orders`
 
-**User Energy Rental Orders**  
+**User Energy Rental Orders**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Get a user's energy rental orders from JustLend. Can filter by role: 'renter' (orders where user is renting out), 'receiver' (orders where user receives energy), or 'all'.
@@ -653,7 +653,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_energy_rent_info`
 
-**Energy Rent Info**  
+**Energy Rent Info**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Get on-chain energy rental info for a specific renter-receiver pair. Returns security deposit, rent balance, and whether an active rental exists.
@@ -667,7 +667,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_return_rental_info`
 
-**Return Rental Info**  
+**Return Rental Info**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Get estimated refund info for returning/canceling an energy rental. Shows how much TRX would be refunded (estimatedRefundTrx), remaining rent, security deposit, usage rental cost, unrecovered energy, and daily rent cost.
@@ -681,7 +681,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `rent_energy`
 
-**Rent Energy**  
+**Rent Energy**
 - **Side effect**: 🔴 On-chain write · high-risk (Remote Write / Destructive) — signs and broadcasts a TRON transaction moving real assets; the client MUST require human confirmation (HITL) before executing
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Rent energy from JustLend for a specified receiver address. Automatically calculates TRX needed based on energy amount. For NEW rentals: durationHours is required (minimum 1 hour), minimum energy is 300,000. For RENEWALS (existing active rental to the same receiver): durationHours is NOT needed — the remaining duration from the existing order is used automatically. Minimum energy for renewal is 50,000. Pre-checks: rental not paused, amount within limits, sufficient TRX balance.
@@ -696,7 +696,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `return_energy_rental`
 
-**Return Energy Rental**  
+**Return Energy Rental**
 - **Side effect**: 🔴 On-chain write · high-risk (Remote Write / Destructive) — signs and broadcasts a TRON transaction moving real assets; the client MUST require human confirmation (HITL) before executing
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Return (cancel) an active energy rental. As a renter, provide the receiver address. As a receiver, provide the renter address. Pre-checks: active rental must exist between the two addresses.
@@ -712,7 +712,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_strx_dashboard`
 
-**sTRX Dashboard**  
+**sTRX Dashboard**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Get sTRX staking dashboard data including TRX price, sTRX/TRX exchange rate, total APY, vote APY, total supply, unfreeze delay days, and energy stake per TRX.
@@ -724,7 +724,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_strx_account`
 
-**sTRX Account Info**  
+**sTRX Account Info**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Get user's sTRX staking account info including staked amount, income, claimable rewards, withdrawn amount, and rental energy amount.
@@ -737,7 +737,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_strx_balance`
 
-**sTRX Balance**  
+**sTRX Balance**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Get the sTRX token balance for an address.
@@ -750,7 +750,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `check_strx_withdrawal_eligibility`
 
-**Check sTRX Withdrawal Eligibility**  
+**Check sTRX Withdrawal Eligibility**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Check if user has TRX available to withdraw after sTRX unstaking unbonding period. Shows staked amount, claimable rewards, pending/completed unstake rounds, and withdrawal status.
@@ -763,7 +763,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `stake_trx_to_strx`
 
-**Stake TRX to sTRX**  
+**Stake TRX to sTRX**
 - **Side effect**: 🔴 On-chain write · high-risk (Remote Write / Destructive) — signs and broadcasts a TRON transaction moving real assets; the client MUST require human confirmation (HITL) before executing
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Stake TRX via JustLend to receive sTRX tokens. sTRX earns staking rewards (vote APY + energy rental income). Pre-checks: sufficient TRX balance for staking amount + gas.
@@ -776,7 +776,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `unstake_strx`
 
-**Unstake sTRX**  
+**Unstake sTRX**
 - **Side effect**: 🔴 On-chain write · high-risk (Remote Write / Destructive) — signs and broadcasts a TRON transaction moving real assets; the client MUST require human confirmation (HITL) before executing
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Unstake sTRX to receive TRX back. Note: unstaked TRX has an unbonding period (typically 14 days) before withdrawal. Pre-checks: sufficient sTRX balance.
@@ -789,7 +789,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `claim_strx_rewards`
 
-**Claim sTRX Rewards**  
+**Claim sTRX Rewards**
 - **Side effect**: 🔴 On-chain write · high-risk (Remote Write / Destructive) — signs and broadcasts a TRON transaction moving real assets; the client MUST require human confirmation (HITL) before executing
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Claim all available sTRX staking rewards. Pre-checks: verifies there are claimable rewards before executing.
@@ -803,7 +803,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `wrap_trx`
 
-**Wrap TRX to WTRX**  
+**Wrap TRX to WTRX**
 - **Side effect**: 🔴 On-chain write · high-risk (Remote Write / Destructive) — signs and broadcasts a TRON transaction moving real assets; the client MUST require human confirmation (HITL) before executing
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Wrap native TRX into WTRX (Wrapped TRX) at a 1:1 rate by sending TRX to the WTRX contract's payable deposit(). WTRX is a TRC20 representation of TRX used by DeFi protocols that can't hold native TRX (e.g. JustLend V2 / Moolah markets quoting WTRX). Reversible: unwrap_trx converts WTRX back to TRX 1:1. Pre-checks: sufficient TRX balance for the wrap amount + gas.
@@ -816,7 +816,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `unwrap_trx`
 
-**Unwrap WTRX to TRX**  
+**Unwrap WTRX to TRX**
 - **Side effect**: 🔴 On-chain write · high-risk (Remote Write / Destructive) — signs and broadcasts a TRON transaction moving real assets; the client MUST require human confirmation (HITL) before executing
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Unwrap WTRX (Wrapped TRX) back into native TRX at a 1:1 rate via the WTRX contract's withdraw(uint256). No approval is needed — you burn your own WTRX. Reverses wrap_trx (1:1). Pre-checks: sufficient WTRX balance and native TRX for gas.
@@ -831,7 +831,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_moolah_vaults`
 
-**Get Moolah Vaults**  
+**Get Moolah Vaults**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: List all JustLend V2 (Moolah) vaults with APY, TVL, and underlying token. Vaults are ERC4626 — deposit tokens to earn auto-compounding yield allocated across Moolah markets.
@@ -844,7 +844,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_moolah_vault`
 
-**Get Moolah Vault**  
+**Get Moolah Vault**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Get detailed info for a single Moolah vault: APY, TVL, allocation, and the user's share balance if address is provided. vaultSymbol is 'TRX', 'USDT', or 'USDD'.
@@ -858,7 +858,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `approve_moolah_vault`
 
-**Approve Moolah Vault**  
+**Approve Moolah Vault**
 - **Side effect**: 🟡 State-changing (Write) — changes local wallet/network config or starts an interaction; client should confirm
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Approve TRC20 token spending for a Moolah vault before depositing. Not needed for TRX vaults. Pass the EXACT amount you intend to deposit (recommended). Pass amount='max' for unlimited approval ONLY when the user explicitly opts in — it lets the vault contract spend the user's entire balance, present and future, until revoked (amount='0').
@@ -872,7 +872,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `moolah_vault_deposit`
 
-**Moolah Vault Deposit**  
+**Moolah Vault Deposit**
 - **Side effect**: 🔴 On-chain write · high-risk (Remote Write / Destructive) — signs and broadcasts a TRON transaction moving real assets; the client MUST require human confirmation (HITL) before executing
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Deposit assets into a Moolah ERC4626 vault to earn yield. For TRC20 vaults (USDT, USDD), call approve_moolah_vault first. Returns vault shares representing your deposit.
@@ -886,7 +886,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `moolah_vault_withdraw`
 
-**Moolah Vault Withdraw**  
+**Moolah Vault Withdraw**
 - **Side effect**: 🔴 On-chain write · high-risk (Remote Write / Destructive) — signs and broadcasts a TRON transaction moving real assets; the client MUST require human confirmation (HITL) before executing
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Withdraw underlying assets from a Moolah vault by specifying the asset amount. Use amount='max' to withdraw everything. No approval needed.
@@ -900,7 +900,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `moolah_vault_redeem`
 
-**Moolah Vault Redeem**  
+**Moolah Vault Redeem**
 - **Side effect**: 🔴 On-chain write · high-risk (Remote Write / Destructive) — signs and broadcasts a TRON transaction moving real assets; the client MUST require human confirmation (HITL) before executing
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Redeem vault shares to receive underlying assets. Use shares='max' to redeem all shares. No approval needed.
@@ -916,7 +916,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_moolah_markets`
 
-**Get Moolah Markets**  
+**Get Moolah Markets**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: List JustLend V2 (Moolah) markets with borrow/supply APY, LLTV, utilization, and liquidity. Markets are isolated — each has its own loan token, collateral token, oracle, and LLTV.
@@ -931,7 +931,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_moolah_market`
 
-**Get Moolah Market**  
+**Get Moolah Market**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Get full details for a single Moolah market by its marketId (bytes32 hex). Includes APY, LLTV, utilization, total supply/borrow, and vaults supplying to this market. Use get_moolah_markets to find marketIds.
@@ -944,7 +944,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_moolah_user_position`
 
-**Get Moolah User Position**  
+**Get Moolah User Position**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Get a user's position in a specific Moolah market: collateral, borrow amount, lltv, and risk ratio. risk close to 1.0 means the position is near liquidation — consider repaying or adding collateral.
@@ -958,7 +958,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `approve_moolah_proxy`
 
-**Approve Moolah Proxy**  
+**Approve Moolah Proxy**
 - **Side effect**: 🟡 State-changing (Write) — changes local wallet/network config or starts an interaction; client should confirm
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Approve TRC20 token spending for the Moolah core contract before supplying collateral or repaying. Not needed for TRX operations. Pass the EXACT amount you intend to use (recommended). Pass amount='max' for unlimited approval ONLY when the user explicitly opts in — it lets the Moolah proxy spend the user's entire balance, present and future, until revoked (amount='0').
@@ -974,7 +974,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `moolah_supply_collateral`
 
-**Moolah Supply Collateral**  
+**Moolah Supply Collateral**
 - **Side effect**: 🔴 On-chain write · high-risk (Remote Write / Destructive) — signs and broadcasts a TRON transaction moving real assets; the client MUST require human confirmation (HITL) before executing
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Supply collateral into a Moolah market to enable borrowing. For TRC20 collateral, call approve_moolah_proxy first. For TRX collateral, TRX is sent directly with no prior approval.
@@ -988,7 +988,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `moolah_withdraw_collateral`
 
-**Moolah Withdraw Collateral**  
+**Moolah Withdraw Collateral**
 - **Side effect**: 🔴 On-chain write · high-risk (Remote Write / Destructive) — signs and broadcasts a TRON transaction moving real assets; the client MUST require human confirmation (HITL) before executing
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Withdraw collateral from a Moolah market. Use amount='max' to withdraw all collateral (only allowed when no active borrows). Withdrawing too much while borrowing will revert — check health factor first.
@@ -1002,7 +1002,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `moolah_borrow`
 
-**Moolah Borrow**  
+**Moolah Borrow**
 - **Side effect**: 🔴 On-chain write · high-risk (Remote Write / Destructive) — signs and broadcasts a TRON transaction moving real assets; the client MUST require human confirmation (HITL) before executing
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Flexible Moolah borrow entry point. Provide collateralAmount only → supply collateral without borrowing. Provide borrowAmount only → borrow against existing collateral. Provide both → supply collateral then borrow in two sequential transactions. Collateral must cover the borrow at the market's LLTV or the borrow tx reverts.
@@ -1017,7 +1017,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `moolah_repay`
 
-**Moolah Repay**  
+**Moolah Repay**
 - **Side effect**: 🔴 On-chain write · high-risk (Remote Write / Destructive) — signs and broadcasts a TRON transaction moving real assets; the client MUST require human confirmation (HITL) before executing
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Repay a Moolah market loan. Use amount='max' to repay the full outstanding borrow (uses shares math for exact settlement). For TRC20 loan tokens, call approve_moolah_proxy first. For TRX loans, TRX is sent directly.
@@ -1033,7 +1033,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_moolah_pending_liquidations`
 
-**Get Pending Liquidations**  
+**Get Pending Liquidations**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: List Moolah positions eligible or approaching liquidation. riskLevel > 1.0 means the position is liquidatable right now. Use minRiskLevel=0.9 to find positions near the threshold.
@@ -1051,7 +1051,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_moolah_liquidation_quote`
 
-**Get Liquidation Quote**  
+**Get Liquidation Quote**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Estimate the loan token cost to liquidate a position. Provide either seizedAssets (collateral to take) OR repaidShares (borrow shares to repay), not both. Returns the exact loan token amount needed. Use this before calling moolah_liquidate.
@@ -1066,7 +1066,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_moolah_liquidation_records`
 
-**Get Liquidation Records**  
+**Get Liquidation Records**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Historical liquidation events on Moolah — both bot-executed and public liquidations.
@@ -1083,7 +1083,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `moolah_liquidate`
 
-**Moolah Liquidate**  
+**Moolah Liquidate**
 - **Side effect**: 🔴 On-chain write · high-risk (Remote Write / Destructive) — signs and broadcasts a TRON transaction moving real assets; the client MUST require human confirmation (HITL) before executing
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Liquidate an undercollateralized Moolah position. You must hold the loan token and have approved it via approve_liquidator_token. Provide EITHER seizedAssets (collateral to seize) OR repaidShares (borrow shares to repay), not both. Use get_moolah_liquidation_quote first to estimate the required loan token amount.
@@ -1099,7 +1099,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `approve_liquidator_token`
 
-**Approve Liquidator Token**  
+**Approve Liquidator Token**
 - **Side effect**: 🟡 State-changing (Write) — changes local wallet/network config or starts an interaction; client should confirm
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Approve loan token spending for the Moolah public liquidator contract. Required before calling moolah_liquidate. Pass the EXACT amount you intend to use (recommended). Pass amount='max' for unlimited approval ONLY when the user explicitly opts in — it lets the liquidator contract spend the user's entire balance, present and future, until revoked (amount='0').
@@ -1117,7 +1117,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_moolah_dashboard`
 
-**Get Moolah Dashboard**  
+**Get Moolah Dashboard**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: JustLend V2 (Moolah) protocol overview: top vaults (APY, TVL) and top markets (borrow/supply rates). If address is provided, also includes the user's aggregated V2 position (total supply, borrow, health factor).
@@ -1132,7 +1132,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_moolah_history`
 
-**Get Moolah History**  
+**Get Moolah History**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Get a user's JustLend V2 position history (net worth, supply, borrow over time) and recent transaction records (supply, borrow, repay, etc.).
@@ -1146,7 +1146,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_moolah_records`
 
-**Get Moolah Records**  
+**Get Moolah Records**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Get a user's paginated V2 (Moolah) transaction history — supply, withdraw, borrow, repay, liquidate events. Distinct from get_moolah_history (which returns position curves + a small recent-txs preview) — this one is the full paginated record list. Works on both mainnet and nile.
@@ -1161,7 +1161,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_moolah_vault_history`
 
-**Get Moolah Vault History**  
+**Get Moolah Vault History**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Time series of a V2 Moolah vault's APY, TVL, and supply mining data. Returns currentSupplyUsd, supplyBaseApy, supplyMiningApy, and a historyRecords array. Use vaultAddress from get_moolah_vaults or chains.ts vault map.
@@ -1174,7 +1174,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `estimate_moolah_energy`
 
-**Estimate Moolah Energy**  
+**Estimate Moolah Energy**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Estimate energy, bandwidth, and TRX cost for a JustLend V2 (Moolah) write operation BEFORE executing it. Returns historical typical values (on-chain simulation for Moolah's tuple-args ops is not yet wired). Set isTRX=true when the underlying / loan / collateral token is native TRX (TrxProviderProxy route). Covers: vault_deposit, vault_withdraw, vault_redeem, approve_vault, supply_collateral, withdraw_collateral, borrow, repay, approve_proxy, liquidate, approve_liquidator.
@@ -1189,7 +1189,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_moolah_market_history`
 
-**Get Moolah Market History**  
+**Get Moolah Market History**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Time series of a V2 Moolah market's borrow/supply APY, utilization, and totals. Returns current totalBorrow/totalCollateral + borrowApy/supplyApy + list[] of historical points. Use marketId (bytes32 hex) from get_moolah_markets.
@@ -1204,7 +1204,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_moolah_vault_mining_apy`
 
-**Get Moolah Vault Mining APY**  
+**Get Moolah Vault Mining APY**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Get V2 mining APY for a single Moolah vault. Returns the USDD / TRX APY split and total (encoded as a fraction, e.g. 0.123 = 12.3%). enabled=true means the vault is active in mining and qualifies for the fire-icon UI hint.
@@ -1217,7 +1217,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_moolah_mining_resolver`
 
-**Get Moolah Mining Resolver**  
+**Get Moolah Mining Resolver**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Map every Moolah vault with active mining to its USDD / TRX APY split. Used by the dashboard to prefetch fire-icon eligibility in one round-trip. Vaults with zero mining APY are excluded from the response.
@@ -1229,7 +1229,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_moolah_mining_accruing`
 
-**Get Moolah Mining Accruing**  
+**Get Moolah Mining Accruing**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Get a user's accruing & settling V2 mining rewards across vaults. accruingUsd = current round still emitting; settlingUsd = previous round in the brief settlement window (miningStatus=2, currRewardStatus=1) — excluded otherwise so it doesn't double-count with already-published merkle airdrops. globalSettlementStatus=true means the backend reports any token in flux; treat per-token amounts as provisional.
@@ -1242,7 +1242,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_moolah_pending_mining_periods`
 
-**Get Moolah Pending Mining Periods**  
+**Get Moolah Pending Mining Periods**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Get a user's claimable V2 mining airdrop rounds (already settled and merkle-published). Each period includes merkleIndex, index, per-token amounts (raw + decimal-shifted), the merkle proof, and a USD total. Feed a periodKey directly into claim_moolah_mining_period to submit the on-chain multiClaim. Set includeClaimed=true to also return rounds the indexer marks as already claimed (default false matches the rewards card behaviour).
@@ -1256,7 +1256,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `claim_moolah_mining_period`
 
-**Claim Moolah Mining Period**  
+**Claim Moolah Mining Period**
 - **Side effect**: 🔴 On-chain write · high-risk (Remote Write / Destructive) — signs and broadcasts a TRON transaction moving real assets; the client MUST require human confirmation (HITL) before executing
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Claim a single V2 mining airdrop round via multiClaim() on the Moolah merkle distributor. Pass periodKey from get_moolah_pending_mining_periods (preferred) or supply merkleIndex / index / amounts / proof directly. Pre-checks isClaimed() and merkleRoots() on-chain so the wallet does not pay gas for a guaranteed-revert tx. Mainnet currently errors with 'distributor not configured' until the V2 contract ships — nile testnet works.
@@ -1276,7 +1276,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_lending_records`
 
-**Get V1 Lending Records**  
+**Get V1 Lending Records**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Get a user's V1 JustLend transaction history: supply, withdraw, borrow, repay, and collateral enable/disable. Paginated. Each record includes actionType (1-11), actionName (human-readable), token, amount, USD value, and txId. Mainnet-only.
@@ -1291,7 +1291,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_strx_records`
 
-**Get sTRX Records**  
+**Get sTRX Records**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Get a user's sTRX staking history: stake, unstake, withdraw (after unbonding), and sTRX transfers. Each record has opType (1-6) and a human-readable opName. Paginated. Mainnet-only.
@@ -1306,7 +1306,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_vote_records`
 
-**Get Vote Records**  
+**Get Vote Records**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Get a user's governance voting history: get_vote (JST → WJST deposits), votes cast for/against proposals, vote withdrawals, and JST conversions back. Each record has opType (1-6), opName, amount, and proposalId (for votes and withdrawals). Use get_user_vote_status for real-time current voting power. Mainnet-only.
@@ -1321,7 +1321,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_energy_rental_records`
 
-**Get Energy Rental Records**  
+**Get Energy Rental Records**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Get a user's JustLend energy-rental history: rent, extend, rent_more, end, recycle actions. Distinct from get_user_energy_rental_orders which returns current active on-chain orders — this one returns the full historical action log. Paginated. Mainnet-only.
@@ -1336,7 +1336,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_claimable_rewards`
 
-**Get Claimable Rewards**  
+**Get Claimable Rewards**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Scan all JustLend V1 merkle airdrop distributors for a user's unclaimed rewards. Returns a map keyed by round; each entry includes the merkleIndex, index, amount(s), token symbol/address, and proof. Feed any returned key into claim_v1_mining_period to submit the on-chain multiClaim. Mainnet-only.
@@ -1349,7 +1349,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `claim_v1_mining_period`
 
-**Claim V1 Mining Period**  
+**Claim V1 Mining Period**
 - **Side effect**: 🔴 On-chain write · high-risk (Remote Write / Destructive) — signs and broadcasts a TRON transaction moving real assets; the client MUST require human confirmation (HITL) before executing
 - **annotations**: idempotent: false · openWorld: true
 - **Description**: Claim a single V1 mining airdrop round via multiClaim() on the appropriate merkle distributor. Pass `key` from get_claimable_rewards (preferred) or supply merkleIndex / index / amount / proof directly. Routing matches the front-app: amount[] → multi-merkle distributor (multi-token leaf); single + USDD → USDDNEW distributor; single + other → main distributor. Mainnet-only.
@@ -1371,7 +1371,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 
 ### `get_liquidation_records`
 
-**Get V1 Liquidation Records**  
+**Get V1 Liquidation Records**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
 - **Description**: Get a user's V1 JustLend liquidation history — both positions the user liquidated and positions where the user was liquidated. Distinct from get_moolah_liquidation_records which covers V2 Moolah liquidations. Paginated. Mainnet-only.

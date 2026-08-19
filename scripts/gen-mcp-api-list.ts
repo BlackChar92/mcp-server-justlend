@@ -234,7 +234,7 @@ for (const [label] of categories) {
   for (const tool of group) {
     lines.push(`### \`${tool.name}\``);
     lines.push("");
-    if (tool.annotations?.title) lines.push(`**${tool.annotations.title}**  `);
+    if (tool.annotations?.title) lines.push(`**${tool.annotations.title}**`);
     lines.push(`- **Side effect**: ${sideEffect(tool.annotations)}`);
     if (tool.annotations) {
       const flags = [

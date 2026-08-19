@@ -15,7 +15,7 @@ Beyond JustLend-specific operations, the server also exposes a full set of **gen
 
 [JustLend DAO](https://justlend.org) is the largest lending protocol on TRON. This MCP server wraps the full protocol functionality into tools and guided prompts that local MCP clients such as Claude Desktop, Codex, Claude Code, and Cursor can use.
 
-**📌 Current Version: v1.1.2 — JustLend V1 + V2 (Moolah), plus TRX↔WTRX wrap/unwrap**
+**📌 Current Version: v1.1.3 — JustLend V1 + V2 (Moolah), plus TRX↔WTRX wrap/unwrap**
 
 - **JustLend V1** (Compound V2 fork): the original pool-based protocol — `jUSDT`, `jTRX`, `jUSDD`, `jSUN`, `jWBTC`, etc. Full supply / borrow / repay / withdraw / collateral management and mining rewards.
 - **JustLend V2 (Moolah)** (Morpho Blue fork): isolated markets with `MarketParams (loanToken, collateralToken, oracle, irm, lltv)` and ERC4626 vaults that auto-allocate across markets. Full vault deposit / redeem, collateral supply / borrow / repay / liquidate, and public liquidations.
@@ -73,7 +73,7 @@ Beyond JustLend-specific operations, the server also exposes a full set of **gen
 
 ### JustLend V1 (pool-based)
 
-The protocol currently exposes **17 active + 6 paused legacy = 23 markets**. Call `get_supported_markets` for the live list with addresses; the active markets are:
+The protocol currently exposes **18 active + 6 legacy = 24 markets**. This roster was cross-checked against the expanded JustLend app market table and live `/lend/jtoken` API on 2026-08-19. Call `get_supported_markets` for the live list with addresses; the active markets are:
 
 | jToken     | Underlying | Description |
 |------------|-----------|-------------|
@@ -94,6 +94,7 @@ The protocol currently exposes **17 active + 6 paused legacy = 23 markets**. Cal
 | jBTT       | BTT       | BitTorrent token |
 | jNFT       | NFT       | APENFT |
 | jHTX       | HTX       | HTX token |
+| jU         | U         | U token |
 
 Paused / legacy markets (closed to new supply/borrow, queryable for read & to unwind positions): `jUSDCOLD`, `jUSDD_OLD`, `jBUSDOLD`, `jSUNOLD`, `jUSDJ`, `jWBTT`.
 
@@ -334,11 +335,25 @@ npm run dev:http     # HTTP/SSE with auto-reload
 
 ## API Reference
 
-> **Machine-readable tool catalog for AI agents:** [`mcp-api-list.md`](./mcp-api-list.md) — a complete, offline-loadable list of every tool with its input schema (parameter / type / required / default), MCP side-effect annotations (read-only vs. on-chain write / destructive) and HITL guidance. It is **generated from source** (`npm run gen:api-list`, see [`scripts/gen-mcp-api-list.ts`](./scripts/gen-mcp-api-list.ts)) so it never drifts from the actual tool definitions. Agents can load it to plan tool routing without connecting to the server.
+> **Machine-readable tool catalog for AI agents:** [`mcp-api-list.md`](./mcp-api-list.md) — a complete, offline-loadable list of every tool with its input schema (parameter / type / required / default), common output schema, MCP side-effect annotations (read-only vs. on-chain write / destructive) and HITL guidance. It is **generated from source** (`npm run gen:api-list`, see [`scripts/gen-mcp-api-list.ts`](./scripts/gen-mcp-api-list.ts)) so it never drifts from the actual tool definitions. Agents can load it to plan tool routing without connecting to the server.
+
+### Structured output contract
+
+All 98 tools declare an MCP `outputSchema`. Successful calls preserve the existing text `content` for older clients and also return a versioned envelope in `structuredContent`:
+
+```json
+{
+  "schemaVersion": "1.0.0",
+  "tool": "get_supported_markets",
+  "result": {}
+}
+```
+
+Schema-aware clients should consume `structuredContent`; consumers should pin the schema major. Tool-specific payloads live under `result`. Error calls preserve `isError: true` and the existing JSON error body with `errorCode`, `retryable`, and `hint` when classified.
 
 ### Tools (98 total)
 
-The full, authoritative per-tool catalog — every tool's input schema, side-effect class (read-only / on-chain write / destructive) and HITL guidance — lives in [`mcp-api-list.md`](./mcp-api-list.md), **generated from source** (`npm run gen:api-list`) so it never drifts. Counts by category:
+The full, authoritative per-tool catalog — every tool's input and output schema, side-effect class (read-only / on-chain write / destructive) and HITL guidance — lives in [`mcp-api-list.md`](./mcp-api-list.md), **generated from source** (`npm run gen:api-list`) so it never drifts. Counts by category:
 
 | Category | Tools | Covers |
 |----------|------:|--------|
@@ -368,18 +383,21 @@ mcp-server-justlend/
 │   │   ├── chains.ts          # Network configs + V1 jTokens + V2 Moolah addresses (mainnet + nile)
 │   │   ├── abis.ts            # jToken, Comptroller, Oracle, TRC20 + 4 Moolah ABIs
 │   │   ├── tools/             # MCP tool registrations (98 tools)
-│   │   │   ├── index.ts                      # Barrel: registers all 10 tool modules
+│   │   │   ├── index.ts                      # Barrel: registers all 13 tool modules with structured outputs
 │   │   │   ├── wallet-tools.ts               # Wallet, network, transfer
 │   │   │   ├── market-tools.ts               # V1 market data, balance, mining
 │   │   │   ├── lending-tools.ts              # V1 supply / borrow / repay / collateral / approve / estimate
 │   │   │   ├── voting-tools.ts               # V1 governance proposals & voting
 │   │   │   ├── energy-tools.ts               # Energy rental
 │   │   │   ├── staking-tools.ts              # sTRX staking
+│   │   │   ├── wtrx-tools.ts                 # TRX ↔ WTRX
 │   │   │   ├── moolah-vault-tools.ts         # V2 vault (6 tools)
 │   │   │   ├── moolah-market-tools.ts        # V2 market (8 tools)
 │   │   │   ├── moolah-liquidation-tools.ts   # V2 liquidation (5 tools)
 │   │   │   ├── moolah-dashboard-tools.ts     # V2 dashboard + history + estimator (6 tools)
-│   │   │   ├── records-tools.ts              # V1 + airdrop records (6 tools, mainnet-only)
+│   │   │   ├── moolah-mining-tools.ts        # V2 mining / rewards (5 tools)
+│   │   │   ├── records-tools.ts              # V1 + airdrop records (7 tools, mainnet-only)
+│   │   │   ├── structured-output.ts          # Common MCP outputSchema + structuredContent
 │   │   │   └── shared.ts                     # Shared helpers
 │   │   ├── prompts.ts         # AI-guided workflow prompts (14: 10 V1-era + 4 V2 Moolah)
 │   │   ├── resources.ts       # Static protocol info resource

@@ -2,6 +2,21 @@
 
 All notable changes to `@justlend/mcp-server-justlend` are documented here. Format inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) with [Semantic Versioning](https://semver.org/). Dates are approximate, derived from git history; see the repository log for exact commits.
 
+## [1.1.3] — 2026-08-19
+
+**Theme**: versioned MCP structured outputs and market-inventory reconciliation.
+
+### Added
+
+- All 98 tools now declare a common MCP `outputSchema` and return a versioned `structuredContent` envelope (`schemaVersion`, `tool`, `result`) on success while preserving legacy text content.
+- The generated `mcp-api-list.md` now documents the output contract globally and on every tool.
+- Registration and adapter tests lock output-schema coverage and backward-compatible text results.
+
+### Fixed
+
+- Reconciled the V1 roster to **24 markets (18 active + 6 legacy)** and restored active `jU` to the README table.
+- Corrected stale tool-module and historical-record counts in the architecture reference.
+
 ## [1.1.2] — 2026-07-15
 
 **Theme**: TRX↔WTRX wrap/unwrap tools + USDT/USDC/USDJ approve reset-to-0 hardening.

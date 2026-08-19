@@ -531,6 +531,16 @@ describe("Tool Registration", () => {
     }
   });
 
+  it("declares the common outputSchema on all 98 tools", () => {
+    expect(registeredTools.size).toBe(98);
+    for (const [name, tool] of registeredTools) {
+      expect(tool.config.outputSchema, `${name} should declare outputSchema`).toBeDefined();
+      expect(tool.config.outputSchema.schemaVersion, `${name} schemaVersion`).toBeDefined();
+      expect(tool.config.outputSchema.tool, `${name} tool discriminator`).toBeDefined();
+      expect(tool.config.outputSchema.result, `${name} result field`).toBeDefined();
+    }
+  });
+
   it("should NOT register removed _from_api tools (v1.0.3)", () => {
     const removedTools = [
       "get_markets_from_api",
@@ -616,6 +626,11 @@ describe("Wallet & Network Tools", () => {
     expect(output.networks).toContain("mainnet");
     expect(output.networks).toContain("nile");
     expect(output.default).toBe("mainnet");
+    expect(result.structuredContent).toEqual({
+      schemaVersion: "1.0.0",
+      tool: "get_supported_networks",
+      result: output,
+    });
   });
 
   it("get_supported_markets should return market list", async () => {

@@ -199,7 +199,7 @@ Recommended tool sequence:
 2. `quote_energy_purchase` — obtain an authoritative read-only quote.
 3. Show the exact payer, receivers, duration, and TRX amount to the user.
 4. `buy_energy_direct` — set `confirmPayment=true` only after explicit user confirmation.
-5. `get_energy_purchase_order` or `get_energy_purchase_history` — track the result.
+5. `get_energy_purchase_order` — track the result; use `get_energy_payment_risk` when payment submission is uncertain.
 
 The server signs the native TRX payment but never broadcasts it locally. The configured backend
 validates and may broadcast the signed transaction. Ambiguous submissions retry only the same signed
@@ -385,7 +385,7 @@ The full, authoritative per-tool catalog — every tool's input and output schem
 | Market Data | 13 | per-market & protocol APY/TVL/rates (contract query + API fallback) |
 | Lending Operations | 10 | supply / borrow / repay / withdraw / collateral / approve (V1 jTokens) |
 | JST Voting / Governance | 10 | proposals, vote status, WJST approve / vote / withdraw |
-| Energy | 14 | rental dashboard and writes; direct-purchase config, quote, order/history/risk, confirmed buy |
+| Energy | 14 | rental dashboard and writes; direct-purchase config, quote, order/risk, confirmed buy |
 | sTRX Staking | 7 | sTRX dashboard & account, stake / unstake / claim / withdraw |
 | WTRX Wrap / Unwrap | 2 | `wrap_trx` (TRX→WTRX 1:1) / `unwrap_trx` (WTRX→TRX 1:1) |
 | JustLend V2 (Moolah) — Vaults | 6 | ERC4626 vault read + deposit / withdraw / redeem / approve |

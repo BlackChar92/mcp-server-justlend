@@ -184,12 +184,13 @@ export TRONGRID_API_KEY="your_trongrid_api_key"
 
 ### Energy direct-purchase API
 
-Direct purchase is fail-closed and has no built-in production URL or economic defaults. Configure the
-separately deployed API explicitly. Until the official production hostname is added to the allowlist,
-custom/test endpoints also require an explicit trust opt-in:
+Direct purchase uses the official production endpoint from the app release by default:
+`https://tegrow.ablesdxd.link`. Limits, durations, prices, payment address, and pool capacity are still
+loaded live; no economic values are hard-coded. Set `JUSTLEND_ENERGY_API_URL` only to override the
+production service. Custom/test endpoints require an explicit trust opt-in:
 
 ```bash
-export JUSTLEND_ENERGY_API_URL="https://energy-api.example"
+export JUSTLEND_ENERGY_API_URL="https://energy-api.example" # optional override
 export JUSTLEND_ALLOW_UNTRUSTED_HOSTS=1 # temporary/custom endpoints only
 ```
 

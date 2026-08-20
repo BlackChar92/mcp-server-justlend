@@ -14,6 +14,7 @@ vi.mock("../../../src/core/services/clients.js", () => ({
 }));
 
 import {
+  DEFAULT_ENERGY_PURCHASE_API_URL,
   EnergyPurchaseApi,
   EnergyPurchaseError,
   FileEnergyPaymentRiskStore,
@@ -110,8 +111,63 @@ describe("energy direct-purchase service", () => {
     process.env = { ...previousEnv };
   });
 
-  it("has no implicit production endpoint", () => {
-    expect(() => new EnergyPurchaseApi()).toThrowError(EnergyPurchaseError);
+  it("uses the official production endpoint without an untrusted-host opt-in", () => {
+    delete process.env.JUSTLEND_ALLOW_UNTRUSTED_HOSTS;
+    const api = new EnergyPurchaseApi({ fetch: vi.fn() });
+    expect(api.baseUrl).toBe(DEFAULT_ENERGY_PURCHASE_API_URL);
+  });
+
+  it("does not pair the production API with a non-mainnet signer", async () => {
+    delete process.env.JUSTLEND_ALLOW_UNTRUSTED_HOSTS;
+    vi.mocked(getWalletAddress).mockResolvedValue(PAYER);
+    const api = new EnergyPurchaseApi({ fetch: vi.fn(), riskStore: new MemoryRiskStore() });
+
+    await expect(api.purchase({
+      receivers: [RECEIVER],
+      energyPerReceiver: 65000,
+      duration: "1h",
+      expectedAmountSun: 2340000,
+      expectedPayAddress: PAY_ADDRESS,
+      network: "nile",
+    })).rejects.toMatchObject({ code: "CONFIG_MISSING" });
+    expect(getSigningClient).not.toHaveBeenCalled();
+  });
+
+  it("normalizes the app production config and quote contract", async () => {
+    delete process.env.JUSTLEND_ALLOW_UNTRUSTED_HOSTS;
+    const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      if (String(input).endsWith("/v1/config")) return envelope({
+        min_energy: 65000,
+        max_energy: 5000000,
+        max_receivers: 50,
+        presets: [65000, 131000],
+        durations: ["1h"],
+        activation_fee_sun: 1100000,
+      });
+      if (String(input).endsWith("/v1/price")) {
+        expect(JSON.parse(String(init?.body))).toEqual({
+          receivers: [RECEIVER],
+          energy_per_receiver: 65000,
+        });
+        return envelope({ amount_sun: 2340000, amount_trx: "2.34", pay_address: PAY_ADDRESS, can_fulfill: true });
+      }
+      throw new Error(`unexpected ${input}`);
+    });
+    const api = new EnergyPurchaseApi({ fetch });
+
+    const liveConfig = await api.getConfig();
+    expect(liveConfig).toMatchObject({
+      max_batch_receivers: 50,
+      energy_presets: [65000, 131000],
+      supported_durations: ["1h"],
+    });
+    await expect(api.quote([RECEIVER], 65000, "1h", liveConfig)).resolves.toMatchObject({
+      total_sun: 2340000,
+      total_trx: "2.34",
+      payment_address: PAY_ADDRESS,
+      amount_sun: 2340000,
+      pay_address: PAY_ADDRESS,
+    });
   });
 
   it("validates a read-only quote against live config", async () => {
@@ -259,10 +315,14 @@ describe("energy direct-purchase service", () => {
         return envelope({ total_sun: 2405000, total_trx: "2.405" });
       }
       if (url.endsWith("/v1/consumer/energy/buy")) {
-        submitted.push(JSON.parse(String(init?.body)).signed_transaction.txID);
+        const submittedRequest = JSON.parse(String(init?.body));
+        submitted.push(submittedRequest.signed_transaction.txID);
+        expect(submittedRequest.energy_per_receiver).toBe(65000);
+        expect(submittedRequest.energy).toBeUndefined();
+        expect(submittedRequest.signed_transaction.raw_data).toBeDefined();
         buyCalls += 1;
         if (buyCalls === 1) throw new Error("connection reset");
-        return envelope({ batch: { id: "7", access_token: "token", state: "paid" }, payment: { tx_hash: TX_ID } });
+        return envelope({ id: "7", access_token: "token", state: "paid", tx_id: TX_ID });
       }
       if (url.endsWith("/v1/consumer/energy/orders/7")) return envelope({ id: 7, state: "delivered" });
       throw new Error(`unexpected ${url}`);
@@ -436,7 +496,7 @@ describe("energy direct-purchase service", () => {
         energy: 65000,
         duration: "1h",
         payer_address: PAYER,
-        signed_transaction: { txID: TX_ID, raw_data_hex: RAW_HEX, signature: ["aa"], visible: false },
+        signed_transaction: { txID: TX_ID, raw_data: {}, raw_data_hex: RAW_HEX, signature: ["aa"], visible: false },
       },
     });
 

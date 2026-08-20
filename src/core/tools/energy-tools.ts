@@ -5,6 +5,8 @@ import { sanitizeError, tronAddress, toolError } from "./shared.js";
 
 function publicPaymentRisk(risk: any): Record<string, unknown> | undefined {
   if (!risk || typeof risk !== "object") return undefined;
+  const recovered = risk.recoveredOrder && typeof risk.recoveredOrder === "object" ? risk.recoveredOrder : undefined;
+  const recoveredBatch = recovered?.batch && typeof recovered.batch === "object" ? recovered.batch : undefined;
   return {
     payerAddress: risk.payerAddress,
     signedTxId: risk.signedTxId,
@@ -15,8 +17,8 @@ function publicPaymentRisk(risk: any): Record<string, unknown> | undefined {
     chainExecution: risk.chainExecution || "unknown",
     networkFingerprint: risk.networkFingerprint,
     replayAvailable: Boolean(risk.signedRequest),
-    recoveredOrderId: risk.recoveredOrder?.batch?.id,
-    recoveredState: risk.recoveredOrder?.batch?.state,
+    recoveredOrderId: recoveredBatch?.id ?? recovered?.id,
+    recoveredState: recoveredBatch?.state ?? recovered?.state,
   };
 }
 
@@ -43,7 +45,7 @@ export function registerEnergyTools(server: McpServer) {
     {
       description:
         "Get live energy direct-purchase limits, supported durations, current unit prices, and pool capacity. " +
-        "Requires JUSTLEND_ENERGY_API_URL; there is intentionally no production URL or economic fallback.",
+        "Uses the official JustLend production API by default; JUSTLEND_ENERGY_API_URL overrides it.",
       inputSchema: {},
       annotations: { title: "Energy Purchase Config", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },

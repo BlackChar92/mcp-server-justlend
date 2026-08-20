@@ -588,7 +588,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 **Energy Purchase Config**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
-- **Description**: Get live energy direct-purchase limits, supported durations, current unit prices, and pool capacity. Requires JUSTLEND_ENERGY_API_URL; there is intentionally no production URL or economic fallback.
+- **Description**: Get live energy direct-purchase limits, supported durations, current unit prices, and pool capacity. Uses the official JustLend production API by default; JUSTLEND_ENERGY_API_URL overrides it.
 - **Output schema**: common structured envelope v1.0.0 (`schemaVersion`, `tool`, `result`)
 - **Params**: none
 

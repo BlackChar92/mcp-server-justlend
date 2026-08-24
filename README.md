@@ -200,13 +200,18 @@ Recommended tool sequence:
 2. `quote_energy_purchase` — obtain an authoritative read-only quote.
 3. Show the exact payer, receivers, duration, and TRX amount to the user.
 4. `buy_energy_direct` — set `confirmPayment=true` only after explicit user confirmation.
-5. `get_energy_purchase_order` — track the result; use `get_energy_payment_risk` when payment submission is uncertain.
+5. `get_energy_purchase_order` — track a token-bearing result.
+6. `get_energy_purchase_history` — recover accepted/in-progress orders by payer when a retry has no token.
+7. `get_energy_payment_risk` — reconcile any remaining ambiguous payment before signing again.
 
 The server signs the native TRX payment but never broadcasts it locally. The configured backend
 validates and may broadcast the signed transaction. Ambiguous submissions retry only the same signed
-transaction, and public transaction identifiers—not signed payloads—are stored with `0600` permissions
-under `~/.mcp-server-justlend/energy-payment-risks.json`. Use `get_energy_payment_risk` before any new
-payment when a previous result is uncertain. Risk reconciliation reports `chainStatus` as
+transaction. For ambiguous submissions, the exact signed request (including the signature and raw
+transaction) is stored locally with `0600` permissions under
+`~/.mcp-server-justlend/energy-payment-risks.json`. It remains broadcastable until transaction expiry,
+is redacted from MCP output, and is removed only after public purchase history confirms the payment/order
+or the backend deterministically rejects it before broadcast. Use `get_energy_payment_risk` before any
+new payment when a previous result is uncertain. Risk reconciliation reports `chainStatus` as
 `observed`/`included` from FullNode first and `solidified` only after SolidityNode finality; RPC
 errors or a missing transaction never authorize a newly signed payment.
 
@@ -364,7 +369,7 @@ npm run dev:http     # HTTP/SSE with auto-reload
 
 ### Structured output contract
 
-All 103 tools declare an MCP `outputSchema`. Successful calls preserve the existing text `content` for older clients and also return a versioned envelope in `structuredContent`:
+All 104 tools declare an MCP `outputSchema`. Successful calls preserve the existing text `content` for older clients and also return a versioned envelope in `structuredContent`:
 
 ```json
 {
@@ -376,7 +381,7 @@ All 103 tools declare an MCP `outputSchema`. Successful calls preserve the exist
 
 Schema-aware clients should consume `structuredContent`; consumers should pin the schema major. Tool-specific payloads live under `result`. Error calls preserve `isError: true` and the existing JSON error body with `errorCode`, `retryable`, and `hint` when classified.
 
-### Tools (103 total)
+### Tools (104 total)
 
 The full, authoritative per-tool catalog — every tool's input and output schema, side-effect class (read-only / on-chain write / destructive) and HITL guidance — lives in [`mcp-api-list.md`](./mcp-api-list.md), **generated from source** (`npm run gen:api-list`) so it never drifts. Counts by category:
 
@@ -386,7 +391,7 @@ The full, authoritative per-tool catalog — every tool's input and output schem
 | Market Data | 13 | per-market & protocol APY/TVL/rates (contract query + API fallback) |
 | Lending Operations | 10 | supply / borrow / repay / withdraw / collateral / approve (V1 jTokens) |
 | JST Voting / Governance | 10 | proposals, vote status, WJST approve / vote / withdraw |
-| Energy | 14 | rental dashboard and writes; direct-purchase config, quote, order/risk, confirmed buy |
+| Energy | 15 | rental dashboard and writes; direct-purchase config, quote, history, order/risk, confirmed buy |
 | sTRX Staking | 7 | sTRX dashboard & account, stake / unstake / claim / withdraw |
 | WTRX Wrap / Unwrap | 2 | `wrap_trx` (TRX→WTRX 1:1) / `unwrap_trx` (WTRX→TRX 1:1) |
 | JustLend V2 (Moolah) — Vaults | 6 | ERC4626 vault read + deposit / withdraw / redeem / approve |
@@ -407,7 +412,7 @@ mcp-server-justlend/
 │   ├── core/
 │   │   ├── chains.ts          # Network configs + V1 jTokens + V2 Moolah addresses (mainnet + nile)
 │   │   ├── abis.ts            # jToken, Comptroller, Oracle, TRC20 + 4 Moolah ABIs
-│   │   ├── tools/             # MCP tool registrations (103 tools)
+│   │   ├── tools/             # MCP tool registrations (104 tools)
 │   │   │   ├── index.ts                      # Barrel: registers all 13 tool modules with structured outputs
 │   │   │   ├── wallet-tools.ts               # Wallet, network, transfer
 │   │   │   ├── market-tools.ts               # V1 market data, balance, mining

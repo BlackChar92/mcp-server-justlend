@@ -527,6 +527,7 @@ describe("Tool Registration", () => {
       "get_energy_purchase_config",
       "quote_energy_purchase",
       "get_energy_purchase_order",
+      "get_energy_purchase_history",
       "get_energy_payment_risk",
       "buy_energy_direct",
       // sTRX Staking
@@ -552,8 +553,8 @@ describe("Tool Registration", () => {
     }
   });
 
-  it("declares the common outputSchema on all 103 tools", () => {
-    expect(registeredTools.size).toBe(103);
+  it("declares the common outputSchema on all 104 tools", () => {
+    expect(registeredTools.size).toBe(104);
     for (const [name, tool] of registeredTools) {
       expect(tool.config.outputSchema, `${name} should declare outputSchema`).toBeDefined();
       expect(tool.config.outputSchema.schemaVersion, `${name} schemaVersion`).toBeDefined();
@@ -590,6 +591,7 @@ describe("Tool Registration", () => {
       "get_energy_purchase_config",
       "quote_energy_purchase",
       "get_energy_purchase_order",
+      "get_energy_purchase_history",
       "get_energy_payment_risk",
     ];
     for (const name of readOnlyTools) {
@@ -1088,6 +1090,24 @@ describe("Energy Direct Purchase Tools", () => {
     const output = getToolOutput(result);
     expect(output.total_sun).toBe(2405000);
     expect(services.quoteEnergyPurchase).toHaveBeenCalledWith([receiver], 65000, "1h");
+  });
+
+  it("returns public purchase history for an explicit payer", async () => {
+    vi.mocked(services.getEnergyPurchaseHistory).mockResolvedValueOnce({
+      total: 1,
+      page: 2,
+      size: 10,
+      rows: [{ order_id: 7, state: "delivered" }],
+    });
+    const result = await callTool("get_energy_purchase_history", {
+      address: receiver,
+      page: 2,
+      size: 10,
+    });
+    const output = getToolOutput(result);
+    expect(output.address).toBe(receiver);
+    expect(output.rows[0].state).toBe("delivered");
+    expect(services.getEnergyPurchaseHistory).toHaveBeenCalledWith(receiver, { page: 2, size: 10 });
   });
 
   it("does not expose the replayable signed transaction in payment-risk output", async () => {

@@ -13,6 +13,7 @@ export const ENERGY_PURCHASE_PATHS = {
   poolHealth: "/v1/pool/health",
   quote: "/v1/price",
   buy: "/v1/consumer/energy/buy",
+  history: "/v1/consumer/energy/orders/history",
   order: (id: string | number) => `/v1/consumer/energy/orders/${encodeURIComponent(String(id))}`,
 } as const;
 
@@ -771,6 +772,9 @@ export class EnergyPurchaseApi {
           ...(options.token ? { "X-Consumer-Order-Token": options.token } : {}),
         },
         body: options.body === undefined ? undefined : JSON.stringify(options.body),
+        // Never forward signed payments or order tokens to an unchecked
+        // redirect target.
+        redirect: "error",
         signal: options.signal,
       };
       response = this.fetchImpl
@@ -857,12 +861,13 @@ export class EnergyPurchaseApi {
   }
 
   getHistory(address: string, options: { page?: number; size?: number } = {}): Promise<Record<string, any>> {
-    void address;
-    void options;
-    return Promise.reject(new EnergyPurchaseError(
-      "UNSUPPORTED_OPERATION",
-      "Order history is not exposed by this MCP server; persist the returned order ID and access token.",
-    ));
+    validateAddress(address, "history address");
+    const query = new URLSearchParams({ address });
+    if (options.size !== undefined) {
+      query.set("page", String(positiveInteger(options.page ?? 1, "page")));
+      query.set("size", String(positiveInteger(options.size, "size")));
+    }
+    return this.request("GET", `${ENERGY_PURCHASE_PATHS.history}?${query}`);
   }
 
   getPaymentRisks(payerAddress: string): EnergyPaymentRisk[] {
@@ -936,6 +941,43 @@ export class EnergyPurchaseApi {
     this.riskStore.save(risk);
   }
 
+  private historyContainsRisk(history: Record<string, any>, risk: EnergyPaymentRisk): boolean {
+    const rows = Array.isArray(history?.rows) ? history.rows : [];
+    const recovered = risk.recoveredOrder && typeof risk.recoveredOrder === "object"
+      ? risk.recoveredOrder as Record<string, any>
+      : undefined;
+    const batch = recovered?.batch && typeof recovered.batch === "object"
+      ? recovered.batch as Record<string, any>
+      : undefined;
+    const recoveredOrderId = batch?.id ?? recovered?.id;
+    const normalize = (value: unknown) => value === undefined || value === null
+      ? ""
+      : String(value).trim().toLowerCase();
+    return rows.some((row: unknown) => {
+      if (!row || typeof row !== "object") return false;
+      const item = row as Record<string, unknown>;
+      const historyTxId = item.payment_tx_id ?? item.paymentTxId ?? item.tx_id ?? item.txId;
+      const historyOrderId = item.order_id ?? item.orderId ?? item.id;
+      return Boolean(
+        (normalize(historyTxId) && normalize(historyTxId) === normalize(risk.signedTxId)) ||
+        (normalize(recoveredOrderId) && normalize(historyOrderId) === normalize(recoveredOrderId)),
+      );
+    });
+  }
+
+  private async resolveRiskFromHistory(risk: EnergyPaymentRisk): Promise<boolean> {
+    try {
+      const history = await this.getHistory(risk.payerAddress);
+      if (!this.historyContainsRisk(history, risk)) return false;
+      this.riskStore.remove(risk.payerAddress, risk.signedTxId);
+      return true;
+    } catch {
+      // History is eventually consistent and may be temporarily unavailable.
+      // Retain the replayable request rather than risk a duplicate payment.
+      return false;
+    }
+  }
+
   async reconcilePaymentRisks(payerAddress: string, network = "mainnet"): Promise<EnergyPaymentRisk[]> {
     const tronWeb = getTronWeb(network);
     const provider = this.explicitNetworkFingerprint || providerFingerprint(tronWeb);
@@ -952,11 +994,13 @@ export class EnergyPurchaseApi {
         });
         risk.paymentConfirmed = true;
         this.riskStore.save(risk);
+        await this.resolveRiskFromHistory(risk);
       } catch (error) {
         const typed = error as EnergyPurchaseError;
         if (typed.code === "TX_ALREADY_CLAIMED") {
           risk.paymentConfirmed = true;
           this.riskStore.save(risk);
+          await this.resolveRiskFromHistory(risk);
         } else if (shouldClearSignedRisk(typed)) {
           this.riskStore.remove(payerAddress, risk.signedTxId);
         } else {
@@ -1216,6 +1260,7 @@ export class EnergyPurchaseApi {
               orderId: null,
               txHash: txId,
               state: "pending",
+              reconciliationRequired: true,
               observedOnChain: true,
               confirmedOnChain: lookup.status === "solidified",
               chainStatus: lookup.status,
@@ -1238,19 +1283,25 @@ export class EnergyPurchaseApi {
     const payment = order.payment && typeof order.payment === "object" ? order.payment : undefined;
     const orderId = batch?.id ?? order.id;
     const accessToken = batch?.access_token ?? order.access_token;
+    risk.recoveredOrder = order;
+    risk.paymentConfirmed = true;
+    this.riskStore.save(risk);
     if (!((typeof orderId === "string" && orderId.trim()) || Number.isSafeInteger(orderId))) {
-      throw new EnergyPurchaseError("INVALID_RESPONSE", "Energy purchase response is missing an order id.");
+      const invalid = new EnergyPurchaseError("INVALID_RESPONSE", "Energy purchase response is missing an order id.");
+      invalid.paymentRisk = risk;
+      throw invalid;
     }
-    this.riskStore.remove(payerAddress, txId);
     const txHash = payment?.tx_hash || order.tx_id || order.payment_tx_id || txId;
-    const detail = await this.pollOrder(orderId, typeof accessToken === "string" && accessToken ? accessToken : undefined);
+    const canPoll = typeof accessToken === "string" && accessToken.length > 0;
+    const detail = canPoll ? await this.pollOrder(orderId, accessToken) : null;
     const state = detail?.state || batch?.state || order.state || "pending";
+    const reconciled = await this.resolveRiskFromHistory(risk);
     if (state === "failed" || state === "expired") {
       throw new EnergyPurchaseError("DELIVERY_FAILED", "Payment was accepted but energy delivery failed.", {
-        details: { orderId, txHash, state, detail },
+        details: { orderId, txHash, state, detail, reconciliationRequired: !reconciled },
       });
     }
-    return { ok: true, orderId, txHash, state, detail };
+    return { ok: true, orderId, txHash, state, detail, reconciliationRequired: !reconciled };
   }
 }
 
@@ -1269,6 +1320,9 @@ export const quoteEnergyPurchase = (receivers: string[], energyPerReceiver: numb
   api().quote(receivers, energyPerReceiver, duration);
 
 export const getEnergyPurchaseOrder = (orderId: string | number, token?: string) => api().getOrder(orderId, token);
+
+export const getEnergyPurchaseHistory = (address: string, options: { page?: number; size?: number } = {}) =>
+  api().getHistory(address, options);
 
 export const getEnergyPaymentRisks = (address: string, network = "mainnet") =>
   api().reconcilePaymentRisks(address, network);

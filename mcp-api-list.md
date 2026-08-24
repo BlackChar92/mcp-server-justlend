@@ -4,7 +4,7 @@
 >
 > Lets an AI agent plan tool routing offline without connecting to the server. Side-effect classes align with the AI-Agent documentation standard baseline (Safe / Network Read / Remote Write / Destructive).
 
-**Total tools**: 103  |  **Protocol**: MCP  |  **Transport**: stdio / HTTP(SSE)
+**Total tools**: 104  |  **Protocol**: MCP  |  **Transport**: stdio / HTTP(SSE)
 
 ## Common structured output contract (v1.0.0)
 
@@ -20,7 +20,7 @@ Every tool declares an MCP `outputSchema`. Successful calls preserve the legacy 
 
 Consume `structuredContent` when available; older clients may continue parsing the first text content item. Error results keep `isError: true` and the existing structured JSON error body.
 
-**Read-only tools**: 62  |  **Write tools**: 41 (of which marked destructive: 28)
+**Read-only tools**: 63  |  **Write tools**: 41 (of which marked destructive: 28)
 
 > ⚠️ Tools marked 🔴 **sign and broadcast TRON transactions that move real assets** — the client MUST require human confirmation (HITL) before executing. 🟡 tools only change local wallet/network config or start an interaction. Private keys are managed encrypted by `@bankofai/agent-wallet` and are **never passed as tool arguments**. The legacy unauthenticated browser-wallet bridge is disabled.
 
@@ -581,7 +581,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 | `proposalId` | number | ✅ |  | The proposal ID to withdraw votes from |
 | `network` | string | — |  | Network. Default: mainnet |
 
-## Energy Rental (14)
+## Energy Rental (15)
 
 ### `get_energy_purchase_config`
 
@@ -618,6 +618,20 @@ Consume `structuredContent` when available; older clients may continue parsing t
 |-------|------|:--------:|---------|-------------|
 | `orderId` | union | ✅ |  | Energy purchase order id |
 | `orderToken` | string (min len 1) | — |  | Optional X-Consumer-Order-Token returned when the order was accepted |
+
+### `get_energy_purchase_history`
+
+**Energy Purchase History**
+- **Side effect**: 🟢 Read-only (Safe / Network Read)
+- **annotations**: idempotent: true · openWorld: true
+- **Description**: Get public direct-purchase history for a payer address, including in-progress and settled orders. Use it to recover an accepted order when an idempotent retry returns no access token.
+- **Output schema**: common structured envelope v1.0.0 (`schemaVersion`, `tool`, `result`)
+
+| Param | Type | Required | Default | Description |
+|-------|------|:--------:|---------|-------------|
+| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | Payer address. Default: configured wallet |
+| `page` | number (min 0) | — |  | History page (1-based; used with size) |
+| `size` | number (min 0) | — |  | Rows per page; omit for the backend default/all-history view |
 
 ### `get_energy_payment_risk`
 

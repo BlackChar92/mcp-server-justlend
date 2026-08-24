@@ -8,8 +8,8 @@ All notable changes to `@justlend/mcp-server-justlend` are documented here. Form
 
 ### Added
 
-- Added five fail-closed energy direct-purchase tools for configuration discovery, authoritative quotes, order recovery, payment-risk reconciliation, and confirmed purchases.
-- All 103 tools now declare a common MCP `outputSchema` and return a versioned `structuredContent` envelope (`schemaVersion`, `tool`, `result`) on success while preserving legacy text content.
+- Added six fail-closed energy direct-purchase tools for configuration discovery, authoritative quotes, public history, order recovery, payment-risk reconciliation, and confirmed purchases.
+- All 104 tools now declare a common MCP `outputSchema` and return a versioned `structuredContent` envelope (`schemaVersion`, `tool`, `result`) on success while preserving legacy text content.
 - The generated `mcp-api-list.md` now documents the output contract globally and on every tool.
 - Registration and adapter tests lock output-schema coverage and backward-compatible text results.
 
@@ -18,6 +18,7 @@ All notable changes to `@justlend/mcp-server-justlend` are documented here. Form
 - Reconciled the V1 roster to **24 markets (18 active + 6 legacy)** and restored active `jU` to the README table.
 - Corrected stale tool-module and historical-record counts in the architecture reference.
 - Hardened direct-purchase recovery with payer-scoped intents, cross-process serialization, duplicate-payment protection, and solidified-success confirmation before order creation.
+- Blocked redirect forwarding for signed payments/order tokens, restored public payer history, and retained recovery state until history confirms tokenless idempotent orders.
 - Updated the transitive `nanoid` override to the patched `3.3.18` release.
 
 ## [1.1.2] — 2026-07-15

@@ -103,6 +103,30 @@ export function registerEnergyTools(server: McpServer) {
   );
 
   server.registerTool(
+    "get_energy_purchase_history",
+    {
+      description:
+        "Get public direct-purchase history for a payer address, including in-progress and settled orders. " +
+        "Use it to recover an accepted order when an idempotent retry returns no access token.",
+      inputSchema: {
+        address: tronAddress("Payer address. Default: configured wallet").optional(),
+        page: z.number().int().positive().optional().describe("History page (1-based; used with size)"),
+        size: z.number().int().positive().optional().describe("Rows per page; omit for the backend default/all-history view"),
+      },
+      annotations: { title: "Energy Purchase History", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ address, page, size }) => {
+      try {
+        const payer = address || await services.getWalletAddress();
+        const history = await services.getEnergyPurchaseHistory(payer, { page, size });
+        return { content: [{ type: "text", text: JSON.stringify({ address: payer, ...history }, null, 2) }] };
+      } catch (error: any) {
+        return energyPurchaseToolError(error);
+      }
+    },
+  );
+
+  server.registerTool(
     "get_energy_payment_risk",
     {
       description:

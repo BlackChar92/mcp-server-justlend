@@ -170,6 +170,22 @@ describe("energy direct-purchase service", () => {
     });
   });
 
+  it("reads public payer history with optional server pagination", async () => {
+    const calls: string[] = [];
+    const api = new EnergyPurchaseApi({
+      baseUrl: "https://energy.example",
+      fetch: vi.fn(async (input: string | URL | Request) => {
+        calls.push(String(input));
+        return envelope({ total: 1, page: 2, size: 10, rows: [{ order_id: "7", payment_tx_id: TX_ID }] });
+      }),
+    });
+
+    await expect(api.getHistory(PAYER, { page: 2, size: 10 })).resolves.toMatchObject({ total: 1 });
+    expect(calls[0]).toContain("/v1/consumer/energy/orders/history?address=");
+    expect(calls[0]).toContain("page=2");
+    expect(calls[0]).toContain("size=10");
+  });
+
   it("validates a read-only quote against live config", async () => {
     const fetch = vi.fn(async (input: string | URL | Request) => {
       if (String(input).endsWith("/v1/config")) return envelope(config());
@@ -315,6 +331,7 @@ describe("energy direct-purchase service", () => {
         return envelope({ total_sun: 2405000, total_trx: "2.405" });
       }
       if (url.endsWith("/v1/consumer/energy/buy")) {
+        expect(init?.redirect).toBe("error");
         const submittedRequest = JSON.parse(String(init?.body));
         submitted.push(submittedRequest.signed_transaction.txID);
         expect(submittedRequest.energy_per_receiver).toBe(65000);
@@ -325,6 +342,9 @@ describe("energy direct-purchase service", () => {
         return envelope({ id: "7", access_token: "token", state: "paid", tx_id: TX_ID });
       }
       if (url.endsWith("/v1/consumer/energy/orders/7")) return envelope({ id: 7, state: "delivered" });
+      if (url.includes("/v1/consumer/energy/orders/history?")) {
+        return envelope({ rows: [{ order_id: "7", payment_tx_id: TX_ID }] });
+      }
       throw new Error(`unexpected ${url}`);
     });
     const api = new EnergyPurchaseApi({
@@ -349,6 +369,61 @@ describe("energy direct-purchase service", () => {
     expect(result).toMatchObject({ ok: true, orderId: "7", txHash: TX_ID, state: "delivered" });
     expect(store.risks).toEqual([]);
     expect("sendRawTransaction" in tronWeb.trx).toBe(false);
+  });
+
+  it("returns tokenless idempotent orders without polling and retains risk until history confirms them", async () => {
+    const tronWeb = tronWebHarness();
+    vi.mocked(getWalletAddress).mockResolvedValue(PAYER);
+    vi.mocked(getSigningClient).mockResolvedValue(tronWeb as any);
+    vi.mocked(getTronWeb).mockReturnValue(tronWeb as any);
+    vi.mocked(signTransactionWithWallet).mockImplementation(async transaction => ({ ...transaction, signature: ["aa"] }));
+    const store = new MemoryRiskStore();
+    let historyVisible = false;
+    let orderPollCalls = 0;
+    const fetch = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/v1/config")) return envelope(config());
+      if (url.endsWith("/v1/price")) return envelope({ total_sun: 2405000, total_trx: "2.405" });
+      if (url.endsWith("/v1/consumer/energy/buy")) {
+        return envelope({ batch: { id: "9", access_token: null, state: "paid" }, payment: { tx_hash: TX_ID } });
+      }
+      if (url.includes("/v1/consumer/energy/orders/history?")) {
+        return envelope({ rows: historyVisible ? [{ order_id: "9", payment_tx_id: TX_ID }] : [] });
+      }
+      if (url.includes("/v1/consumer/energy/orders/9")) {
+        orderPollCalls += 1;
+        return envelope({ id: 9, state: "delivered" });
+      }
+      throw new Error(`unexpected ${url}`);
+    });
+    const api = new EnergyPurchaseApi({
+      baseUrl: "https://energy.example",
+      fetch,
+      riskStore: store,
+      sleep: async () => {},
+      now: () => 1,
+      networkFingerprint: "mainnet-provider",
+    });
+
+    await expect(api.purchase({
+      receivers: [RECEIVER],
+      energyPerReceiver: 65000,
+      duration: "1h",
+      expectedAmountSun: 2405000,
+      expectedPayAddress: PAY_ADDRESS,
+      network: "mainnet",
+    })).resolves.toMatchObject({
+      orderId: "9",
+      state: "paid",
+      detail: null,
+      reconciliationRequired: true,
+    });
+    expect(orderPollCalls).toBe(0);
+    expect(store.risks).toHaveLength(1);
+    expect(store.risks[0]?.paymentConfirmed).toBe(true);
+
+    historyVisible = true;
+    await expect(api.reconcilePaymentRisks(PAYER)).resolves.toEqual([]);
   });
 
   it("rejects a concurrent purchase for the same payer before a second signature", async () => {

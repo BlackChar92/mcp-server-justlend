@@ -638,13 +638,9 @@ Consume `structuredContent` when available; older clients may continue parsing t
 **Energy Payment Risk**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
-- **Description**: Reconcile and return unresolved direct-purchase payment risks. If any result remains, do not sign a new payment.
+- **Description**: Return unresolved direct-purchase payment risks for the configured wallet without replaying a signed payment. If any result remains, do not sign a new payment.
 - **Output schema**: common structured envelope v1.0.0 (`schemaVersion`, `tool`, `result`)
-
-| Param | Type | Required | Default | Description |
-|-------|------|:--------:|---------|-------------|
-| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | Payer address. Default: configured wallet |
-| `network` | string | — |  | Network used to query the payment transaction. Default: configured network |
+- **Params**: none
 
 ### `buy_energy_direct`
 

@@ -365,6 +365,11 @@ vi.mock("../../src/core/services/index.js", () => ({
   getEnergyPaymentRisks: vi.fn(async () => []),
   buyEnergyDirect: vi.fn(async () => ({ ok: true, orderId: 7, txHash: "payment_tx", state: "delivered" })),
 
+  // Moolah vault write-tool dependencies
+  readContract: vi.fn(async () => 0n),
+  utils: { parseUnits: vi.fn(() => 1n) },
+  moolahVaultDeposit: vi.fn(async () => ({ txID: "mock_vault_deposit_tx", amount: "1" })),
+
   // sTRX Staking
   getStrxDashboard: vi.fn(async () => ({
     trxPrice: 0.12,
@@ -1132,11 +1137,18 @@ describe("Energy Direct Purchase Tools", () => {
       },
     }] as any);
 
-    const result = await callTool("get_energy_payment_risk", { address: receiver });
+    const result = await callTool("get_energy_payment_risk");
     const output = getToolOutput(result);
+    expect(output.address).toBe("TTestWalletAddress123456789012345");
     expect(output.risks[0]).toMatchObject({ signedTxId: "ab".repeat(32), replayAvailable: true });
     expect(output.risks[0]).not.toHaveProperty("signedRequest");
     expect(result.content[0].text).not.toContain("secret-signature");
+    expect(services.getEnergyPaymentRisks).toHaveBeenCalledWith("TTestWalletAddress123456789012345");
+  });
+
+  it("does not expose payer or network selectors on the read-only risk tool", () => {
+    const schema = registeredTools.get("get_energy_payment_risk")?.config.inputSchema;
+    expect(schema).toEqual({});
   });
 
   it("requires literal true confirmation at the schema boundary", () => {
@@ -1165,6 +1177,24 @@ describe("Energy Direct Purchase Tools", () => {
       expectedPayAddress: "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb",
       network: "mainnet",
     });
+  });
+});
+
+describe("Moolah Vault Tools", () => {
+  it("suggests an exact approval amount when a deposit allowance is insufficient", async () => {
+    const result = await callTool("moolah_vault_deposit", {
+      vaultSymbol: "USDT",
+      amount: "123.45",
+    });
+    const output = getToolOutput(result);
+
+    expect(output).toMatchObject({
+      status: "approval_required",
+      suggestedTool: "approve_moolah_vault",
+      args: { vaultSymbol: "USDT", amount: "123.45" },
+    });
+    expect(output.args.amount).not.toBe("max");
+    expect(services.moolahVaultDeposit).not.toHaveBeenCalled();
   });
 });
 

@@ -130,17 +130,15 @@ export function registerEnergyTools(server: McpServer) {
     "get_energy_payment_risk",
     {
       description:
-        "Reconcile and return unresolved direct-purchase payment risks. If any result remains, do not sign a new payment.",
-      inputSchema: {
-        address: tronAddress("Payer address. Default: configured wallet").optional(),
-        network: z.string().optional().describe("Network used to query the payment transaction. Default: configured network"),
-      },
+        "Return unresolved direct-purchase payment risks for the configured wallet without replaying a signed payment. " +
+        "If any result remains, do not sign a new payment.",
+      inputSchema: {},
       annotations: { title: "Energy Payment Risk", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ address, network = services.getGlobalNetwork() }) => {
+    async () => {
       try {
-        const payer = address || await services.getWalletAddress();
-        const risks = await services.getEnergyPaymentRisks(payer, network);
+        const payer = await services.getWalletAddress();
+        const risks = await services.getEnergyPaymentRisks(payer);
         return {
           content: [{
             type: "text",

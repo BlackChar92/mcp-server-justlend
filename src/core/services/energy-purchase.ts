@@ -1324,8 +1324,10 @@ export const getEnergyPurchaseOrder = (orderId: string | number, token?: string)
 export const getEnergyPurchaseHistory = (address: string, options: { page?: number; size?: number } = {}) =>
   api().getHistory(address, options);
 
-export const getEnergyPaymentRisks = (address: string, network = "mainnet") =>
-  api().reconcilePaymentRisks(address, network);
+// A read-only MCP tool must never submit a stored signed payment. Reconciliation
+// remains private to the explicitly confirmed purchase path above, while this
+// public service export only reports metadata for the configured payer.
+export const getEnergyPaymentRisks = (address: string) => api().getPaymentRisks(address);
 
 export const buyEnergyDirect = (input: {
   receivers: string[];

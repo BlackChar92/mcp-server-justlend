@@ -7,7 +7,7 @@ import {
   type WalletConfig,
 } from "@bankofai/agent-wallet";
 import { randomBytes } from "crypto";
-import { chmodSync, closeSync, existsSync, mkdirSync, openSync, unlinkSync, writeFileSync } from "fs";
+import { chmodSync, closeSync, existsSync, mkdirSync, openSync, unlinkSync, writeSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import { TronWeb } from "tronweb";
@@ -183,7 +183,7 @@ async function withWalletInitLock<T>(configDir: string, operation: () => Promise
   while (lockFd === undefined) {
     try {
       lockFd = openSync(lockPath, "wx", 0o600);
-      writeFileSync(lockPath, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }) + "\n", { mode: 0o600 });
+      writeSync(lockFd, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }) + "\n");
     } catch (error: any) {
       if (lockFd !== undefined) {
         try { closeSync(lockFd); } catch { /* best-effort */ }

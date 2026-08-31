@@ -266,7 +266,7 @@ findings, plus dependency advisory cleanup. Tool surface unchanged (59 tools).
 
 [1.1.0]: https://github.com/justlend/mcp-server-justlend/releases/tag/v1.1.0
 [1.0.8]: https://github.com/justlend/mcp-server-justlend/releases/tag/v1.0.8
-[1.0.7]: https://github.com/justlend/mcp-server-justlend/releases/tag/v1.0.7
+[1.0.7]: https://github.com/justlend/mcp-server-justlend/commit/e6d4bc917e522d8fc7fe50a6e653e2719943b129
 [1.0.6]: https://github.com/justlend/mcp-server-justlend/releases/tag/v1.0.6
 [1.0.4]: https://github.com/justlend/mcp-server-justlend/releases/tag/v1.0.4
 [1.0.3]: https://github.com/justlend/mcp-server-justlend/releases/tag/v1.0.3

@@ -15,7 +15,7 @@ Beyond JustLend-specific operations, the server also exposes a full set of **gen
 
 [JustLend DAO](https://justlend.org) is the largest lending protocol on TRON. This MCP server wraps the full protocol functionality into tools and guided prompts that local MCP clients such as Claude Desktop, Codex, Claude Code, and Cursor can use.
 
-**📌 Current Version: v1.1.3 — JustLend V1 + V2 (Moolah), plus TRX↔WTRX wrap/unwrap**
+**📌 Current Version: v1.1.4 — JustLend V1 + V2 (Moolah), plus TRX↔WTRX wrap/unwrap**
 
 - **JustLend V1** (Compound V2 fork): the original pool-based protocol — `jUSDT`, `jTRX`, `jUSDD`, `jSUN`, `jWBTC`, etc. Full supply / borrow / repay / withdraw / collateral management and mining rewards.
 - **JustLend V2 (Moolah)** (Morpho Blue fork): isolated markets with `MarketParams (loanToken, collateralToken, oracle, irm, lltv)` and ERC4626 vaults that auto-allocate across markets. Full vault deposit / redeem, collateral supply / borrow / repay / liquidate, and public liquidations.

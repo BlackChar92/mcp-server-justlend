@@ -2,6 +2,17 @@
 
 All notable changes to `@justlend/mcp-server-justlend` are documented here. Format inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) with [Semantic Versioning](https://semver.org/). Dates are approximate, derived from git history; see the repository log for exact commits.
 
+## [1.1.4] — 2026-09-02
+
+**Theme**: wallet initialization race hardening and release-artifact alignment.
+
+### Fixed
+
+- Serialized first-use wallet initialization across processes with an owned `O_EXCL` lock descriptor, bounded stale-lock handling, and a second existence check before creation.
+- Wired the secure local secret loader into every agent-wallet provider so persisted key material is decrypted through the configured secret store.
+- Verified CSPRNG failure and concurrent first-use paths fail closed without leaving private-key or lock artifacts.
+- Aligned the package metadata and release documentation with the fixed wallet implementation.
+
 ## [1.1.3] — 2026-08-19
 
 **Theme**: secure energy direct purchase, versioned MCP structured outputs, and market-inventory reconciliation.

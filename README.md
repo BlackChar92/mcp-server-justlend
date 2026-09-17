@@ -344,6 +344,14 @@ HTTP mode is fail-closed: `MCP_API_KEY` is required, the server binds to `127.0.
 | `MCP_CORS_ORIGIN` | _(disabled)_ | Allowed CORS origin. If unset, no CORS headers are sent. |
 | `MCP_MAX_SESSIONS` | `100` | Maximum concurrent SSE sessions |
 | `MCP_SESSION_TIMEOUT_MS` | `1800000` | Session idle timeout in ms (default: 30 min) |
+| `MCP_RATE_LIMIT_PER_MIN` | `120` | Per-IP HTTP requests per minute, excluding `/health` |
+| `MCP_SSE_RATE_LIMIT_PER_MIN` | `10` | Per-IP new SSE sessions per minute |
+
+Numeric settings must be positive, safe base-10 integers (`PORT`: 1–65535).
+Unset or empty values use the defaults; other invalid values stop HTTP startup
+rather than silently disabling a limit. `AGENT_WALLET_PASSWORD` remains
+memory-only during both wallet creation and import. Only an explicitly allowed,
+auto-generated legacy password may be written to `runtime_secrets.json`.
 
 Example with authentication:
 

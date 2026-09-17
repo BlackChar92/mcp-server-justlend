@@ -380,11 +380,11 @@ export async function importWallet(
   }
 
   // Resolve or create password
-  let password = process.env.AGENT_WALLET_PASSWORD || null;
+  let password = process.env.AGENT_WALLET_PASSWORD?.trim() || null;
   let passwordIsRuntimeGenerated = false;
   try {
     const existingProvider = resolveWalletProvider({ network: "tron" });
-    if (existingProvider instanceof ConfigWalletProvider) {
+    if (!password && existingProvider instanceof ConfigWalletProvider) {
       password = existingProvider.loadRuntimeSecretsPassword() || password;
     }
   } catch { /* no existing provider */ }
@@ -403,17 +403,18 @@ export async function importWallet(
     secretLoader: loadLocalSecret,
   });
   provider.ensureStorage();
-  if (!provider.hasRuntimeSecrets()) {
+  // Only the explicitly opted-in, generated fallback may write a plaintext
+  // password. An operator-supplied env password must remain memory-only, even
+  // when no runtime_secrets.json exists or the legacy opt-in is also set.
+  if (passwordIsRuntimeGenerated && !provider.hasRuntimeSecrets()) {
     provider.saveRuntimeSecrets(password);
-    if (passwordIsRuntimeGenerated) {
-      secureRuntimeSecretsFile(configDir);
-      console.error(
-        `[agent-wallet] WARNING: auto-generated encryption password was written to ` +
-        `${join(configDir, "runtime_secrets.json")} alongside the encrypted store. ` +
-        `At-rest encryption is effectively obfuscation in this mode. ` +
-        `Set AGENT_WALLET_PASSWORD instead of persisting the encryption key beside the wallet.`,
-      );
-    }
+    secureRuntimeSecretsFile(configDir);
+    console.error(
+      `[agent-wallet] WARNING: auto-generated encryption password was written to ` +
+      `${join(configDir, "runtime_secrets.json")} alongside the encrypted store. ` +
+      `At-rest encryption is effectively obfuscation in this mode. ` +
+      `Set AGENT_WALLET_PASSWORD instead of persisting the encryption key beside the wallet.`,
+    );
   }
 
   // Initialize master if needed

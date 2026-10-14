@@ -526,6 +526,9 @@ npx vitest run tests/core/services/contracts.test.ts
 npx vitest run tests/core/services/transactions.test.ts
 npx vitest run tests/core/services/tokens.test.ts
 
+# Offline rental quote/preflight failure controls (no RPC or wallet transactions)
+npx vitest run tests/core/services/energy-rental-fail-closed.test.ts
+
 # Energy rental & sTRX staking read tests
 npx vitest run tests/core/services/energy-rental.test.ts
 npx vitest run tests/core/services/strx-staking.test.ts
@@ -544,6 +547,14 @@ TEST_MOOLAH_WRITE=1 npx vitest run tests/integration/moolah-writes.nile.test.ts
 ```
 
 > **Rate limiting**: Integration tests make real RPC calls to TronGrid. Without `TRONGRID_API_KEY` the free tier limits to a few requests per second. Run test files individually, or set `TRONGRID_API_KEY` to avoid 429 errors.
+
+## Energy rental quote safety
+
+Energy rental quotes now require successful reads of the market parameters, pause flag, usage-charge ratio, and **both** market rates. Missing, reverted, or malformed reads return an error, not fixed defaults or a rate-model substitute. The same checks run before `rent_energy` reaches the transaction sender. An unreadable rental order is not treated as an empty order, and the read-only renewal quote rejects an unknown remaining duration rather than assuming zero.
+
+Successful quotes include `dataSources` with the network, energy conversion source (`dashboard-api` or `chain-resources`), and market-contract parameter/rate sources. API-to-chain conversion fallback is allowed only when actual global energy limit and weight reads are positive and valid; fallback dashboard metrics listed in `unavailableFields` are not observed prices or yields. These sources identify how inputs were obtained, not an atomic-block snapshot or a guarantee that an API response is fresh. Re-quote before a separate confirmed write.
+
+Older/testnet deployments that do not expose the required quote inputs now fail closed, including Nile deployments missing `usageChargeRatio` or either market-rate getter. They are not silently assigned a 0.5 ratio or a default rate. This change does not publish a server release or alter any contract.
 
 ## Troubleshooting
 

@@ -2,6 +2,15 @@
 
 All notable changes to `@justlend/mcp-server-justlend` are documented here. Format inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) with [Semantic Versioning](https://semver.org/). Dates are approximate, derived from git history; see the repository log for exact commits.
 
+## [Unreleased]
+
+### Fixed
+
+- Fail energy-rental quotes and transaction preflight on unavailable, rejected or malformed contract reads instead of substituting parameter, pause, usage-ratio or rate defaults.
+- Require both market rates; deployments without the required getters return errors rather than a rate-model substitute quote.
+- Require real global resource values for API-to-chain energy conversion, expose quote input sources, and distinguish unknown order/renewal data from verified zero values.
+- Add offline quote, renewal, RPC-failure and no-broadcast regression controls.
+
 ## [1.1.4] — 2026-09-02
 
 **Theme**: wallet initialization race hardening and release-artifact alignment.

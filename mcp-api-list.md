@@ -677,7 +677,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 **Energy Rental Parameters**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
-- **Description**: Get on-chain energy rental parameters: liquidation threshold, fee ratio, min fee, total delegated/frozen TRX, max rentable amount, rent paused status, usage charge ratio.
+- **Description**: Get on-chain energy rental parameters: liquidation threshold, fee ratio, min fee, total delegated/frozen TRX, max rentable amount, rent paused status, usage charge ratio. Fails if required contract reads are unavailable; never substitutes fixed defaults.
 - **Output schema**: common structured envelope v1.0.0 (`schemaVersion`, `tool`, `result`)
 
 | Param | Type | Required | Default | Description |
@@ -689,7 +689,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 **Calculate Energy Rental Price**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: false · openWorld: true
-- **Description**: Calculate the cost to rent a specific amount of energy for a given duration. Returns TRX amount needed, rental rate, fee, total prepayment, security deposit, and daily cost. For NEW rentals: provide energyAmount and durationHours. For RENEWALS: provide energyAmount and receiverAddress. The tool auto-detects existing rentals and calculates the incremental cost (subtracting existing security deposit). durationHours is optional for renewals (defaults to 0 = no additional time).
+- **Description**: Calculate the cost to rent a specific amount of energy for a given duration. Returns TRX amount needed, rental rate, fee, total prepayment, security deposit, daily cost, and dataSources. Fails closed on missing contract inputs or renewal duration; no fixed-default or rate-model substitute quotes. For NEW rentals: provide energyAmount and durationHours. For RENEWALS: provide energyAmount and receiverAddress. The tool auto-detects existing rentals and calculates the incremental cost (subtracting existing security deposit). durationHours is optional for renewals (defaults to 0 = no additional time).
 - **Output schema**: common structured envelope v1.0.0 (`schemaVersion`, `tool`, `result`)
 
 | Param | Type | Required | Default | Description |
@@ -704,7 +704,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 **Energy Rental Rate**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: false · openWorld: true
-- **Description**: Get the current energy rental rate for a given TRX amount. Returns rental rate, stable rate, and effective rate (max of both).
+- **Description**: Get the current energy rental rate for a given TRX amount. Returns rental rate, stable rate, and effective rate (max of both). Both market-contract reads must succeed; unsupported deployments return an error, not a guessed rate.
 - **Output schema**: common structured envelope v1.0.0 (`schemaVersion`, `tool`, `result`)
 
 | Param | Type | Required | Default | Description |

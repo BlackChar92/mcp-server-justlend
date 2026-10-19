@@ -4,6 +4,13 @@ All notable changes to `@justlend/mcp-server-justlend` are documented here. Form
 
 ## [Unreleased]
 
+### Security
+
+- Upgrade the SDK to `1.32.0` and pin patched transitive HTTP/URL dependencies: Axios `1.20.0`, fast-uri `3.1.8`, Hono `4.13.12`, ip-address `10.7.3`, proxy-addr `2.0.8`, and qs `6.16.0`.
+- Prefer the next-to-latest stable release on the existing major line where patched (SDK, Hono, ip-address, qs). Axios, fast-uri 3.x, and proxy-addr require their latest release on that line because the previous release remains affected. Selection checked on 2026-10-19; no major-version migration or audit-threshold relaxation.
+- Remove redundant Express-specific body-parser overrides that conflicted during npm dependency validation; the locked body-parser versions remain unchanged.
+- Add offline regressions for proxy-trust IP spoofing and comma-array query-limit bypasses. Dependency audit findings do not by themselves establish that every vulnerable feature is used by this server.
+
 ### Fixed
 
 - Fail energy-rental quotes and transaction preflight on unavailable, rejected or malformed contract reads instead of substituting parameter, pause, usage-ratio or rate defaults.

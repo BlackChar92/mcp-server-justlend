@@ -389,6 +389,37 @@ All 104 tools declare an MCP `outputSchema`. Successful calls preserve the exist
 
 Schema-aware clients should consume `structuredContent`; consumers should pin the schema major. Tool-specific payloads live under `result`. Error calls preserve `isError: true` and the existing JSON error body with `errorCode`, `retryable`, and `hint` when classified.
 
+**Compatibility scope:** `schemaVersion` versions the common envelope, not every nested
+API result. The generic `result` remains unconstrained for most tools. Do not assume
+that an unchanged envelope version guarantees every business field; inspect the
+connected tool's `outputSchema` and pin the package version for stricter consumers.
+The bundled Skills server's structured error envelope is different from this full
+server's JSON text errors. For unknown codes or missing `retryable`, stop a write
+workflow and inspect state; `retryable: true` permits backoff for reads, not blind
+replay of a possibly submitted transaction.
+
+#### sTRX eligibility result contract
+
+`check_strx_withdrawal_eligibility` has a field-level `result` schema (discoverable
+through MCP `tools/list`, also rendered in the generated catalog):
+
+| Fields | Meaning |
+|---|---|
+| `stakedAmount`, `totalIncome`, `claimableRewards`, `withdrawnAmount` | Human-readable TRX numbers, or `null` if unavailable; do not use these Number-based summaries for exact transaction arithmetic. |
+| `hasStakedTrx`, `hasCompletedWithdrawals` | Boolean for known state, otherwise `null`. |
+| `pendingUnstakeRounds`, `completedUnstakeRounds`, `roundDetails` | Counts / API round array; `null` when unavailable. `[]` means a known empty queue, not contract fallback. Round `endTimestamp` is Unix milliseconds. |
+| `unfreezeDelayDays` | Days, or `null` if unknown. |
+| `claimEligibility` | `eligible` for a known positive claimable amount, `ineligible` for a known zero, otherwise `unknown`; not a guarantee that a future transaction succeeds. |
+| `source`, `dashboardSource`, `dataStatus`, `unknownFields`, `note` | Account/dashboard provenance and field completeness; preserve degradation notes. `complete` describes eligibility fields only, not all dashboard data. |
+
+This corrects the old fallback's misleading zeros/false/empty queue. Consumers
+must handle nullable fields before using the result for decisions. An unavailable
+claim amount causes `claim_strx_rewards` to return `data_unavailable`,
+`retryable: false`, without submission; re-read account/eligibility and obtain
+confirmation before trying a known-positive claim. `unstake_strx` starts a new
+unbonding round; collecting available TRX uses `claim_strx_rewards` (`claimAll`),
+followed by receipt and post-state verification.
+
 ### Tools (104 total)
 
 The full, authoritative per-tool catalog — every tool's input and output schema, side-effect class (read-only / on-chain write / destructive) and HITL guidance — lives in [`mcp-api-list.md`](./mcp-api-list.md), **generated from source** (`npm run gen:api-list`) so it never drifts. Counts by category:
@@ -628,7 +659,7 @@ For deeper inspection, run the server under the [MCP Inspector](https://github.c
 → AI uses `stake_trx` prompt: checks balance → checks exchange rate & APY → stakes TRX → verifies sTRX received
 
 **"Do I have any sTRX rewards to claim?"**
-→ AI calls `get_strx_account` to check claimable rewards → calls `claim_strx_rewards` if available
+→ AI reads `get_strx_account` and `check_strx_withdrawal_eligibility`, then reports the result only. Unknown/null data is not zero and must not trigger a claim. A query alone never authorizes a transaction. If the user later requests a claim, refresh eligibility; for a known positive amount, show the current claimable amount, network and signer, obtain separate explicit confirmation, then call `claim_strx_rewards` and verify the receipt and post-state.
 
 **"Can I withdraw my unstaked TRX?"**
 → AI calls `check_strx_withdrawal_eligibility` to check unbonding status and completed withdrawal rounds
@@ -637,10 +668,10 @@ For deeper inspection, run the server under the [MCP Inspector](https://github.c
 → AI uses `moolah_supply` prompt: lists vaults with APY → selects USDT → checks allowance → calls `approve_moolah_vault` → calls `moolah_vault_deposit` → verifies shares via `get_moolah_vault`
 
 **"What's my risk on the TRX→USDT market?"** _(Moolah)_
-→ AI calls `get_moolah_user_position` for the market, interprets the `risk` ratio (0–1 where 1.0 = liquidatable), warns at `>0.85`
+→ AI calls `get_moolah_user_position` for the market, interprets the `risk` ratio (which can exceed 1); approaching 1 is a warning, not proof of liquidation eligibility. Rounded or stale API values, including 1.0, are not an execution predicate; verify current on-chain health before acting
 
 **"Find me a liquidation opportunity"** _(Moolah)_
-→ AI calls `get_moolah_pending_liquidations` with `minRiskLevel=1.0` → for a target, calls `get_moolah_liquidation_quote` → estimates profit → if viable, guides through `approve_liquidator_token` + `moolah_liquidate`
+→ AI calls `get_moolah_pending_liquidations` with `minRiskLevel=1.0` to find candidates, not guaranteed liquidatable positions → verifies current on-chain health for the target → calls `get_moolah_liquidation_quote` (a cost estimate, not proof of borrower eligibility) → estimates profit → if eligible and viable, separately confirms `approve_liquidator_token` + `moolah_liquidate`
 
 **"How much did I supply to JustLend in the last month?"**
 → AI calls `get_lending_records` paginated and filters action type `1` (supply) from the returned `actionName`

@@ -6,6 +6,9 @@ All notable changes to `@justlend/mcp-server-justlend` are documented here. Form
 
 ### Security
 
+- Limit each tool call to 10,000 combined array elements and object members before schema validation; retain the HTTP parser's 1 MiB request-body limit.
+- Patch remaining redirect-header and source-map advisories with follow-redirects `1.16.1` and source-map-js `1.2.2`; the previous stable releases remain affected. Add loopback regressions for array-form and declared sensitive headers across redirects.
+- Refresh the development toolchain to patched next-to-latest stable releases on the existing major lines: Vitest `4.1.11`, Vite `8.3.4`, and PostCSS `8.5.30`. Release order and advisory ranges checked on 2026-10-21; production dependencies and the CI audit threshold are otherwise unchanged.
 - Upgrade the SDK to `1.32.0` and pin patched transitive HTTP/URL dependencies: Axios `1.20.0`, fast-uri `3.1.8`, Hono `4.13.12`, ip-address `10.7.3`, proxy-addr `2.0.8`, and qs `6.16.0`.
 - Prefer the next-to-latest stable release on the existing major line where patched (SDK, Hono, ip-address, qs). Axios, fast-uri 3.x, and proxy-addr require their latest release on that line because the previous release remains affected. Selection checked on 2026-10-19; no major-version migration or audit-threshold relaxation.
 - Remove redundant Express-specific body-parser overrides that conflicted during npm dependency validation; the locked body-parser versions remain unchanged.

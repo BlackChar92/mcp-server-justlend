@@ -15,10 +15,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '24.22.1'
           cache: npm
       - run: npm ci
       - run: npm audit --omit=dev
+      - run: npm audit --audit-level=high
       - run: npm run build
       - run: npm test
       # mcp-api-list.md is generated from source; fail if a tool change forgot to regenerate it.

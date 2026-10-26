@@ -2,11 +2,22 @@ import { describe, it, expect } from "vitest";
 import { createRequire } from "node:module";
 const { isSupportedNodeVersion } = createRequire(import.meta.url)("../../scripts/check-node-version.cjs");
 
-describe("installer Node security baseline", () => {
-  it("rejects EOL/unpatched releases and accepts patched release lines", () => {
-  const rejected = ['v18.20.5', 'v20.19.2', 'v21.7.1', 'v22.23.3', 'v23.11.0', 'v24.22.0', 'v25.9.0', 'v26.12.0', 'v22.23.4-rc.1'];
-  const accepted = ['v22.23.4', 'v22.24.0', 'v24.22.1', 'v24.23.0', 'v26.12.1', 'v27.0.0'];
-    for (const version of rejected) expect(isSupportedNodeVersion(version), version).toBe(false);
-    for (const version of accepted) expect(isSupportedNodeVersion(version), version).toBe(true);
-  });
+describe("exact installer Node.js version", () => {
+  it("accepts v24.22.1", () => expect(isSupportedNodeVersion("v24.22.1")).toBe(true));
+  it("accepts 24.22.1", () => expect(isSupportedNodeVersion("24.22.1")).toBe(true));
+  it("rejects v24.22.0", () => expect(isSupportedNodeVersion("v24.22.0")).toBe(false));
+  it("rejects v24.22.2", () => expect(isSupportedNodeVersion("v24.22.2")).toBe(false));
+  it("rejects v24.21.1", () => expect(isSupportedNodeVersion("v24.21.1")).toBe(false));
+  it("rejects v24.23.1", () => expect(isSupportedNodeVersion("v24.23.1")).toBe(false));
+  it("rejects v23.22.1", () => expect(isSupportedNodeVersion("v23.22.1")).toBe(false));
+  it("rejects v25.22.1", () => expect(isSupportedNodeVersion("v25.22.1")).toBe(false));
+  it("rejects v22.23.4", () => expect(isSupportedNodeVersion("v22.23.4")).toBe(false));
+  it("rejects v26.12.1", () => expect(isSupportedNodeVersion("v26.12.1")).toBe(false));
+  it("rejects v27.0.0", () => expect(isSupportedNodeVersion("v27.0.0")).toBe(false));
+  it("rejects v24.22.1-rc.1", () => expect(isSupportedNodeVersion("v24.22.1-rc.1")).toBe(false));
+  it("rejects v24.22.1+build", () => expect(isSupportedNodeVersion("v24.22.1+build")).toBe(false));
+  it("rejects an empty version", () => expect(isSupportedNodeVersion("")).toBe(false));
+  it("rejects v24.22", () => expect(isSupportedNodeVersion("v24.22")).toBe(false));
+  it("rejects invalid", () => expect(isSupportedNodeVersion("invalid")).toBe(false));
+  it("rejects v024.22.1", () => expect(isSupportedNodeVersion("v024.22.1")).toBe(false));
 });

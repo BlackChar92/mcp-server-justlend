@@ -20,7 +20,7 @@ echo ""
 # ── 1. Check Node.js ──────────────────────
 
 if ! command -v node &> /dev/null; then
-    echo "❌ Node.js not found. Please install Node.js 22.23.4+ (22.x), 24.22.1+ (24.x), or 26.12.1+ first."
+    echo "❌ Node.js not found. Please install Node.js 24.22.1 first."
     echo "   macOS:   brew install node"
     echo "   Other:   https://nodejs.org/"
     exit 1

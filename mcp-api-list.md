@@ -604,7 +604,7 @@ The envelope version covers `schemaVersion`, `tool`, and `result`, not every nes
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
 | `receiverAddresses` | <code>string[]</code> | ✅ |  | One or more energy receiver addresses |
-| `energyPerReceiver` | <code>number (min 0, max 9007199254740991)</code> | ✅ |  | Energy amount for each receiver |
+| `energyPerReceiver` | <code>integer (max 9007199254740991, exclusive min 0)</code> | ✅ |  | Energy amount for each receiver |
 | `duration` | <code>string (min len 1)</code> | ✅ |  | Duration exactly as advertised by get_energy_purchase_config |
 
 ### `get_energy_purchase_order`
@@ -631,8 +631,8 @@ The envelope version covers `schemaVersion`, `tool`, and `result`, not every nes
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
 | `address` | <code>string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/)</code> | — |  | Payer address. Default: configured wallet |
-| `page` | <code>number (min 0)</code> | — |  | History page (1-based; used with size) |
-| `size` | <code>number (min 0)</code> | — |  | Rows per page; omit for the backend default/all-history view |
+| `page` | <code>integer (max 9007199254740991, exclusive min 0)</code> | — |  | History page (1-based; used with size) |
+| `size` | <code>integer (max 9007199254740991, exclusive min 0)</code> | — |  | Rows per page; omit for the backend default/all-history view |
 
 ### `get_energy_payment_risk`
 
@@ -654,11 +654,11 @@ The envelope version covers `schemaVersion`, `tool`, and `result`, not every nes
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
 | `receiverAddresses` | <code>string[]</code> | ✅ |  | One or more energy receiver addresses |
-| `energyPerReceiver` | <code>number (min 0, max 9007199254740991)</code> | ✅ |  | Energy amount for each receiver |
+| `energyPerReceiver` | <code>integer (max 9007199254740991, exclusive min 0)</code> | ✅ |  | Energy amount for each receiver |
 | `duration` | <code>string (min len 1)</code> | ✅ |  | Duration exactly as advertised by get_energy_purchase_config |
-| `expectedAmountSun` | <code>number (min 0, max 9007199254740991)</code> | ✅ |  | Exact total_sun from the quote explicitly confirmed by the user |
+| `expectedAmountSun` | <code>integer (max 9007199254740991, exclusive min 0)</code> | ✅ |  | Exact total_sun from the quote explicitly confirmed by the user |
 | `expectedPayAddress` | <code>string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/)</code> | ✅ |  | Exact payment_address from the quote explicitly confirmed by the user |
-| `confirmPayment` | <code>literal</code> | ✅ |  | Must be true only after the user explicitly confirms this value-moving payment |
+| `confirmPayment` | <code>literal(true)</code> | ✅ |  | Must be true only after the user explicitly confirms this value-moving payment |
 | `network` | <code>string</code> | — |  | Signing network. Default: configured network |
 
 ### `get_energy_rental_dashboard`
@@ -843,8 +843,8 @@ The envelope version covers `schemaVersion`, `tool`, and `result`, not every nes
 | `totalIncome` | <code>number (min 0) &#124; null</code> | ✅ | TRX, human-readable; null when unknown |
 | `claimableRewards` | <code>number (min 0) &#124; null</code> | ✅ | TRX available to claim; null when unknown |
 | `withdrawnAmount` | <code>number (min 0) &#124; null</code> | ✅ | TRX, human-readable; null when unknown |
-| `pendingUnstakeRounds` | <code>number (min 0) &#124; null</code> | ✅ |  |
-| `completedUnstakeRounds` | <code>number (min 0) &#124; null</code> | ✅ |  |
+| `pendingUnstakeRounds` | <code>integer (min 0, max 9007199254740991) &#124; null</code> | ✅ |  |
+| `completedUnstakeRounds` | <code>integer (min 0, max 9007199254740991) &#124; null</code> | ✅ |  |
 | `hasCompletedWithdrawals` | <code>boolean &#124; null</code> | ✅ |  |
 | `unfreezeDelayDays` | <code>number (min 0) &#124; null</code> | ✅ |  |
 | `roundDetails` | <code>object[] &#124; null</code> | ✅ | API rounds with Unix-millisecond expiry; null when unavailable, [] only for a known empty queue |
@@ -1067,7 +1067,7 @@ The envelope version covers `schemaVersion`, `tool`, and `result`, not every nes
 |-------|------|:--------:|---------|-------------|
 | `tokenAddress` | <code>string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/)</code> | ✅ |  | TRC20 contract address (Base58) |
 | `tokenSymbol` | <code>string</code> | ✅ |  | Token symbol for display (e.g. 'USDT') |
-| `tokenDecimals` | <code>number (min 0, max 38)</code> | ✅ |  | Token decimals (e.g. 6 for USDT). Integer in [0, 38]. |
+| `tokenDecimals` | <code>integer (min 0, max 38)</code> | ✅ |  | Token decimals (e.g. 6 for USDT). Integer in [0, 38]. |
 | `amount` | <code>string (pattern /^(&#92;d+(&#92;.&#92;d+)?&#124;max)$/)</code> | ✅ |  | Exact amount to approve (e.g. '100'), or 'max' for unlimited (NOT recommended; user must opt in). |
 | `network` | <code>string</code> | — |  | Network. Default: mainnet |
 
@@ -1208,7 +1208,7 @@ The envelope version covers `schemaVersion`, `tool`, and `result`, not every nes
 |-------|------|:--------:|---------|-------------|
 | `tokenAddress` | <code>string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/)</code> | ✅ |  | Loan token contract address (Base58) |
 | `tokenSymbol` | <code>string</code> | ✅ |  | Token symbol for display (e.g. 'USDT') |
-| `tokenDecimals` | <code>number (min 0, max 38)</code> | ✅ |  | Token decimals (e.g. 6 for USDT). Integer in [0, 38]. |
+| `tokenDecimals` | <code>integer (min 0, max 38)</code> | ✅ |  | Token decimals (e.g. 6 for USDT). Integer in [0, 38]. |
 | `amount` | <code>string (pattern /^(&#92;d+(&#92;.&#92;d+)?&#124;max)$/)</code> | ✅ |  | Exact amount to approve (e.g. '100'), or 'max' for unlimited (NOT recommended; user must opt in). |
 | `network` | <code>string</code> | — |  | Network. Default: mainnet |
 
@@ -1364,8 +1364,8 @@ The envelope version covers `schemaVersion`, `tool`, and `result`, not every nes
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
 | `periodKey` | <code>string</code> | — |  | Round key from get_moolah_pending_mining_periods (preferred) |
-| `merkleIndex` | <code>union</code> | — |  | Override: merkle tree index |
-| `index` | <code>union</code> | — |  | Override: leaf index inside the tree |
+| `merkleIndex` | <code>string &#124; number</code> | — |  | Override: merkle tree index |
+| `index` | <code>string &#124; number</code> | — |  | Override: leaf index inside the tree |
 | `amounts` | <code>string[]</code> | — |  | Override: token amounts in raw units (integer strings), slot-aligned with the tree's tokenAddress[] |
 | `proof` | <code>string[]</code> | — |  | Override: merkle proof (bytes32[]) |
 | `address` | <code>string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/)</code> | — |  | Owner address used to refetch the airdrop entry when periodKey is supplied. Default: signing wallet |
@@ -1457,8 +1457,8 @@ The envelope version covers `schemaVersion`, `tool`, and `result`, not every nes
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
 | `key` | <code>string</code> | — |  | Round key from get_claimable_rewards (preferred) |
-| `merkleIndex` | <code>union</code> | — |  | Override: merkle tree index |
-| `index` | <code>union</code> | — |  | Override: leaf index inside the tree |
+| `merkleIndex` | <code>string &#124; number</code> | — |  | Override: merkle tree index |
+| `index` | <code>string &#124; number</code> | — |  | Override: leaf index inside the tree |
 | `amount` | <code>union</code> | — |  | Override: token amount(s) in raw units (integer strings); pass an array for multi-token leaves |
 | `proof` | <code>string[]</code> | — |  | Override: merkle proof (bytes32[]) |
 | `tokenAddress` | <code>union</code> | — |  | Override: token address(es) used for routing when the entry is single-token |

@@ -6,6 +6,10 @@ All notable changes to `@justlend/mcp-server-justlend` are documented here. Form
 
 ### Security
 
+- Close the 2026-10-26 audit findings with body-parser `1.20.9` / `2.4.0` and fast-uri `3.1.9`. Their preceding releases on the same major lines remain affected, so use the latest patched versions on those lines.
+- Migrate the shared Zod dependency to `4.6.6` (the next-to-latest stable release); no Zod 3 release fixes GHSA-mrhx-c7xc-m3w5. Apply the same version to agent-wallet and other transitive consumers, and verify temporary-wallet creation/import/reload and MCP schemas against the override.
+- Generate field descriptions through Zod 4's public JSON Schema API instead of Zod 3 private internals; retain required/null/default/constraint distinctions. Add collection-size and loopback compressed-body regressions, including both installed body-parser major lines.
+
 - Limit each tool call to 10,000 combined array elements and object members before schema validation; retain the HTTP parser's 1 MiB request-body limit.
 - Patch remaining redirect-header and source-map advisories with follow-redirects `1.16.1` and source-map-js `1.2.2`; the previous stable releases remain affected. Add loopback regressions for array-form and declared sensitive headers across redirects.
 - Refresh the development toolchain to patched next-to-latest stable releases on the existing major lines: Vitest `4.1.11`, Vite `8.3.4`, and PostCSS `8.5.30`. Release order and advisory ranges checked on 2026-10-21; production dependencies and the CI audit threshold are otherwise unchanged.
@@ -15,6 +19,8 @@ All notable changes to `@justlend/mcp-server-justlend` are documented here. Form
 - Add offline regressions for proxy-trust IP spoofing and comma-array query-limit bypasses. Dependency audit findings do not by themselves establish that every vulnerable feature is used by this server.
 
 ### Fixed
+
+- Replace obsolete browser-wallet recommendations in the quick-setup script with agent-mode and local-only import guidance; browser signing remains disabled.
 
 - Fail energy-rental quotes and transaction preflight on unavailable, rejected or malformed contract reads instead of substituting parameter, pause, usage-ratio or rate defaults.
 - Require both market rates; deployments without the required getters return errors rather than a rate-model substitute quote.

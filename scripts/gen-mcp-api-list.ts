@@ -32,6 +32,7 @@ import { registerMoolahMiningTools } from "../src/core/tools/moolah-mining-tools
 import { registerRecordsTools } from "../src/core/tools/records-tools.js";
 import { TOOL_OUTPUT_SCHEMA_VERSION, withStructuredToolOutputs } from "../src/core/tools/structured-output.js";
 import { sideEffect } from "./lib/tool-side-effects.js";
+import { describeField } from "./lib/schema-description.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(__dirname, "..");
@@ -101,74 +102,6 @@ for (const [label, register] of categories) {
 const missingOutputSchema = tools.filter((tool) => !tool.outputSchema);
 if (missingOutputSchema.length > 0) {
   throw new Error(`Tools missing outputSchema: ${missingOutputSchema.map((tool) => tool.name).join(", ")}`);
-}
-
-/** Unwrap Zod optional/default/nullable to the inner type, tracking metadata. */
-function describeField(zt: z.ZodTypeAny): {
-  type: string;
-  required: boolean;
-  def?: string;
-  description: string;
-} {
-  let required = true;
-  let nullable = false;
-  let def: string | undefined;
-  let description = (zt as any)?._def?.description ?? "";
-  let t: any = zt;
-
-  while (t?._def) {
-    const tn = t._def.typeName;
-    if (tn === "ZodOptional") {
-      required = false;
-      t = t._def.innerType;
-    } else if (tn === "ZodNullable") {
-      nullable = true;
-      t = t._def.innerType;
-    } else if (tn === "ZodDefault") {
-      required = false;
-      try {
-        def = JSON.stringify(t._def.defaultValue());
-      } catch {
-        /* ignore */
-      }
-      t = t._def.innerType;
-    } else {
-      break;
-    }
-    if (!description && t?._def?.description) description = t._def.description;
-  }
-
-  const tn: string = t?._def?.typeName ?? "ZodUnknown";
-  let type = tn.replace(/^Zod/, "").toLowerCase();
-  if (tn === "ZodEnum") type = `enum(${t._def.values.join(" | ")})`;
-  if (tn === "ZodNativeEnum") type = "enum";
-  if (tn === "ZodArray") {
-    const inner = t._def.type?._def?.typeName?.replace(/^Zod/, "").toLowerCase() ?? "any";
-    type = `${inner}[]`;
-  }
-  if (tn === "ZodNumber") {
-    const checks = t._def.checks ?? [];
-    const bounds = checks
-      .filter((c: any) => c.kind === "min" || c.kind === "max")
-      .map((c: any) => `${c.kind} ${c.value}`)
-      .join(", ");
-    if (bounds) type = `number (${bounds})`;
-  }
-  if (tn === "ZodString") {
-    const checks = t._def.checks ?? [];
-    const parts = checks
-      .map((c: any) => {
-        if (c.kind === "regex") return `pattern ${String(c.regex)}`;
-        if (c.kind === "min") return `min len ${c.value}`;
-        if (c.kind === "max") return `max len ${c.value}`;
-        if (c.kind === "length") return `len ${c.value}`;
-        return null;
-      })
-      .filter(Boolean);
-    if (parts.length) type = `string (${parts.join(", ")})`;
-  }
-  if (nullable) type += " | null";
-  return { type, required, def, description: (description || "").replace(/\s*\n\s*/g, " ").trim() };
 }
 
 // HTML code keeps regex backslashes and union pipes intact in Markdown tables.

@@ -144,7 +144,9 @@ export const JUSTLEND_ADDRESSES: Record<TronNetwork, JustLendAddresses> = {
       strx: "TKQ5VVJPsoZDD7NqQ8ffhFwzeRp45XLSGt",
       multi: "TUsyCPRyQdMsn9WnJcssBFXtzg6bUVbty6",
     },
-    merkleDistributorV2: "",
+    // Mainnet multi-token mining distributor; verify this stays aligned with
+    // the app and SDK deployment registry.
+    merkleDistributorV2: "TRiE1tGxBitNAMUazZ6Kk7GA36hpPdzUSL",
     strx: {
       proxy: "TU3kjFuhtEo42tsCBtfYUAZxoqQ4yuSLQ5",
       market: "TU2MJ5Veik1LRAgjeSzEdvmDYx7mefJZvd",

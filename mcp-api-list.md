@@ -1358,7 +1358,7 @@ The envelope version covers `schemaVersion`, `tool`, and `result`, not every nes
 **Claim Moolah Mining Period**
 - **Side effect**: 🔴 On-chain transaction — may move assets or change allowances, collateral membership, votes, or protocol state. Builds a transaction, requires wallet signing, and may broadcast; explicit human confirmation (HITL) is required before execution.
 - **annotations**: idempotent: false · openWorld: true
-- **Description**: Claim a single V2 mining airdrop round via multiClaim() on the Moolah merkle distributor. Pass periodKey from get_moolah_pending_mining_periods (preferred) or supply merkleIndex / index / amounts / proof directly. Pre-checks isClaimed() and merkleRoots() on-chain so the wallet does not pay gas for a guaranteed-revert tx. Mainnet currently errors with 'distributor not configured' until the V2 contract ships — nile testnet works.
+- **Description**: Claim a single V2 mining airdrop round via multiClaim() on the Moolah merkle distributor. Pass periodKey from get_moolah_pending_mining_periods (preferred) or supply merkleIndex / index / amounts / proof directly. Pre-checks isClaimed() and merkleRoots() on-chain so the wallet does not pay gas for a guaranteed-revert tx; unavailable pre-checks stop submission. Mainnet supports periodKey resolution. Nile requires raw claim fields because the rewards REST backend is mainnet-only. A returned txID indicates submission, not final confirmation.
 - **Output schema**: common structured envelope v1.0.0 (`schemaVersion`, `tool`, `result`)
 
 | Param | Type | Required | Default | Description |

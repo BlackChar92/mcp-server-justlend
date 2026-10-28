@@ -18,7 +18,7 @@ async function startServer() {
         // validation. The HTTP parser's byte limit alone cannot bound its cost.
         maxToolInputElements: 10_000,
         instructions:
-          "JustLend DAO MCP Server — TRON lending protocol + general chain utilities.\n\n" +
+          "JustLend MCP Server — TRON lending protocol + general chain utilities.\n\n" +
           "IMPORTANT: On the FIRST user interaction, call `get_wallet_address` to check wallet status. " +
           "If walletMode is \"unset\", you MUST present the wallet choice BEFORE doing anything else:\n" +
           "  • Recommended: Agent wallet — call `set_wallet_mode` with mode=\"agent\" and configure AGENT_WALLET_PASSWORD.\n" +

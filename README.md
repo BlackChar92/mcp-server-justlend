@@ -4,18 +4,18 @@
 ![TRON Network](https://img.shields.io/badge/Network-TRON-red)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.8+-3178C6)
 ![MCP](https://img.shields.io/badge/MCP-1.22.0+-blue)
-![JustLend](https://img.shields.io/badge/Protocol-JustLend_DAO-green)
+![JustLend](https://img.shields.io/badge/Protocol-JustLend-green)
 ![npm](https://img.shields.io/badge/npm-@justlend/mcp--server--justlend-CB3837)
 
-A Model Context Protocol (MCP) server that enables AI agents to interact with the **JustLend DAO** lending protocol on TRON. Supply assets, borrow against collateral, manage positions, participate in V2 (Moolah) isolated markets and vaults, and analyze DeFi portfolios — all through a unified AI interface.
+A Model Context Protocol (MCP) server that enables AI agents to interact with the **JustLend** lending protocol on TRON. Supply assets, borrow against collateral, manage positions, participate in V2 (Moolah) isolated markets and vaults, and analyze DeFi portfolios — all through a unified AI interface.
 
 Beyond JustLend-specific operations, the server also exposes a full set of **general-purpose TRON chain utilities** — balance queries, block/transaction data, token metadata, TRX transfers, smart contract reads/writes, staking (Stake 2.0), multicall, and more.
 
 ## Overview
 
-[JustLend DAO](https://justlend.org) is the largest lending protocol on TRON. This MCP server wraps the full protocol functionality into tools and guided prompts that local MCP clients such as Claude Desktop, Codex, Claude Code, and Cursor can use.
+[JustLend](https://justlend.org) is the largest lending protocol on TRON. This MCP server wraps the full protocol functionality into tools and guided prompts that local MCP clients such as Claude Desktop, Codex, Claude Code, and Cursor can use.
 
-**📌 Current Version: v1.1.4 — JustLend V1 + V2 (Moolah), plus TRX↔WTRX wrap/unwrap**
+**📌 Package version: v1.1.4 — JustLend V1 + V2 (Moolah), plus TRX↔WTRX wrap/unwrap**
 
 - **JustLend V1** (Compound V2 fork): the original pool-based protocol — `jUSDT`, `jTRX`, `jUSDD`, `jSUN`, `jWBTC`, etc. Full supply / borrow / repay / withdraw / collateral management and mining rewards.
 - **JustLend V2 (Moolah)** (Morpho Blue fork): isolated markets with `MarketParams (loanToken, collateralToken, oracle, irm, lltv)` and ERC4626 vaults that auto-allocate across markets. Full vault deposit / redeem, collateral supply / borrow / repay / liquidate, and public liquidations.
@@ -379,7 +379,7 @@ npm run dev:http     # HTTP/SSE with auto-reload
 
 ### Structured output contract
 
-All 104 tools declare an MCP `outputSchema`. Successful calls preserve the existing text `content` for older clients and also return a versioned envelope in `structuredContent`:
+All 107 tools declare an MCP `outputSchema`. Successful calls preserve the existing text `content` for older clients and also return a versioned envelope in `structuredContent`:
 
 ```json
 {
@@ -422,7 +422,10 @@ confirmation before trying a known-positive claim. `unstake_strx` starts a new
 unbonding round; collecting available TRX uses `claim_strx_rewards` (`claimAll`),
 followed by receipt and post-state verification.
 
-### Tools (104 total)
+The 107-tool catalog below describes this source checkout, not a new npm release.
+Use the connected server’s `tools/list` to detect capabilities before use.
+
+### Tools (107 total)
 
 The full, authoritative per-tool catalog — every tool's input and output schema, side-effect class (read-only / on-chain write / destructive) and HITL guidance — lives in [`mcp-api-list.md`](./mcp-api-list.md), **generated from source** (`npm run gen:api-list`) so it never drifts. Counts by category:
 
@@ -440,6 +443,7 @@ The full, authoritative per-tool catalog — every tool's input and output schem
 | JustLend V2 (Moolah) — Liquidation | 5 | pending liquidations, quote, liquidate, approve |
 | JustLend V2 (Moolah) — Dashboard & History | 6 | portfolio, positions, dashboard & history |
 | JustLend V2 (Moolah) — Mining, Rewards & Estimator | 5 | mining APY / accrual, claim, gas estimate |
+| Risk Alerts (read-only) | 3 | alert list, default rules, V2 markets; no signatures or email writes |
 | Historical Records (V1 + airdrop) — mainnet-only | 7 | transaction / vote / reward history, claimable airdrops |
 
 Every write / destructive tool is marked `destructiveHint: true` and must be gated behind host-side human confirmation (HITL); see [`mcp-api-list.md`](./mcp-api-list.md) for the exact per-tool side-effect class.
@@ -453,8 +457,8 @@ mcp-server-justlend/
 │   ├── core/
 │   │   ├── chains.ts          # Network configs + V1 jTokens + V2 Moolah addresses (mainnet + nile)
 │   │   ├── abis.ts            # jToken, Comptroller, Oracle, TRC20 + 4 Moolah ABIs
-│   │   ├── tools/             # MCP tool registrations (104 tools)
-│   │   │   ├── index.ts                      # Barrel: registers all 13 tool modules with structured outputs
+│   │   ├── tools/             # MCP tool registrations (107 tools)
+│   │   │   ├── index.ts                      # Barrel: registers all 14 tool modules with structured outputs
 │   │   │   ├── wallet-tools.ts               # Wallet, network, transfer
 │   │   │   ├── market-tools.ts               # V1 market data, balance, mining
 │   │   │   ├── lending-tools.ts              # V1 supply / borrow / repay / collateral / approve / estimate
@@ -686,3 +690,26 @@ See [`CHANGELOG.md`](./CHANGELOG.md) for the per-version history (Keep a Changel
 
 MIT License Copyright (c) 2026 JustLend
 SPDX-License-Identifier: MIT
+
+## Risk alerts (read-only)
+
+Set `JUSTLEND_ALERT_API_URL` to an explicitly trusted HTTPS endpoint. There is no
+implicit production host. `get_risk_alerts` and `get_risk_alert_markets` require an
+explicit account; `get_risk_alert_rules` needs no account. Mainnet TRON only.
+These public reads never load a wallet or reuse a browser session. Failed reads
+are errors/unknown, not empty lists; null defaults remain unavailable. Email
+addresses, signatures and session identifiers are omitted from returned data.
+Creating, editing, toggling, deleting alerts and email operations are not exposed
+until the backend confirms a headless session contract. The signing protocol
+prefix `JustLend DAO Risk Alert` must not be renamed with product branding.
+
+## Deployment and fee policy
+
+Independent configuration assertions live in `tests/fixtures/deployments.verified.json`.
+The Nile sTRX/energy profile is internally linked but differs from App's other Nile
+profile. Do not mix individual addresses between them. Both ETHB contracts report
+18 decimals; do not copy App's stale static 6. Unknown networks fail closed.
+These snapshots do not replace fresh deployment/permission checks before a write.
+General `safeSend` fee-limit fallback is 1000 TRX, with operation-level overrides;
+this is a ceiling, not a quote or actual charge. Inspect the exact transaction
+preview and current resource estimate; this change does not raise fee budgets.

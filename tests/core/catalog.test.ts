@@ -29,8 +29,8 @@ describe("offline tool catalog execution effects", () => {
     expect(output).toContain("| `claimableRewards` | <code>number (min 0) &#124; null</code> | ✅ |");
     expect(output).toContain("| `note` | <code>string</code> | — |");
     expect(output).not.toContain("🟡 State-changing (Write)");
-    expect([...output.matchAll(/^### `/gm)]).toHaveLength(104);
-    expect([...output.matchAll(/^- \*\*Side effect\*\*: 🟢/gm)]).toHaveLength(63);
+    expect([...output.matchAll(/^### `/gm)]).toHaveLength(107);
+    expect([...output.matchAll(/^- \*\*Side effect\*\*: 🟢/gm)]).toHaveLength(66);
     expect([...output.matchAll(/^- \*\*Side effect\*\*: 🔴/gm)]).toHaveLength(37);
     expect([...output.matchAll(/^- \*\*Side effect\*\*: 🟡/gm)]).toHaveLength(4);
     expect(output.trim()).toBe(readFileSync(new URL("../../mcp-api-list.md", import.meta.url), "utf8").trim());

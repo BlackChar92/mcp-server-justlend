@@ -731,7 +731,7 @@ export function getApiHost(network: string = DEFAULT_NETWORK): string {
   const n = network.toLowerCase();
   if (n === "mainnet" || n === "tron" || n === "trx") return JUSTLEND_API_HOSTS.mainnet;
   if (n === "nile" || n === "testnet") return JUSTLEND_API_HOSTS.nile;
-  return JUSTLEND_API_HOSTS.mainnet;
+  throw new Error(`Unsupported network: ${network}. Supported: mainnet, nile`);
 }
 
 // ── Moolah V2 helpers ─────────────────────────────────────────────────────────

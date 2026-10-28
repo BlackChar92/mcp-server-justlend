@@ -4,7 +4,7 @@
 >
 > Lets an AI agent plan tool routing offline without connecting to the server. Side-effect classes align with the AI-Agent documentation standard baseline (Safe / Network Read / Remote Write / Destructive).
 
-**Total tools**: 104  |  **Protocol**: MCP  |  **Transport**: stdio / HTTP(SSE)
+**Total tools**: 107  |  **Protocol**: MCP  |  **Transport**: stdio / HTTP(SSE)
 
 ## Common structured output contract (v1.0.0)
 
@@ -21,7 +21,7 @@ Every tool declares an MCP `outputSchema`. Successful calls preserve the legacy 
 Consume `structuredContent` when available; older clients may continue parsing the first text content item. Error results keep `isError: true` and the existing structured JSON error body.
 The envelope version covers `schemaVersion`, `tool`, and `result`, not every nested business field. The sTRX eligibility tool additionally declares a field-level result schema below. Unknown error codes or missing retryability never authorize replaying a write.
 
-**Read-only tools**: 63  |  **Write tools**: 41 (of which marked destructive: 28)
+**Read-only tools**: 66  |  **Write tools**: 41 (of which marked destructive: 28)
 
 > ⚠️ 🔴 identifies on-chain transactions, including transfers, approvals, collateral membership, and claims, whether or not the MCP annotation marks them destructive. They require explicit human confirmation **before** building a signing/broadcast workflow. 🟡 identifies local configuration or the disabled browser interaction, not an on-chain write. `destructiveHint: false` does not mean read-only. Direct energy payments are signed locally but may be broadcast by the backend. Private keys remain encrypted in `@bankofai/agent-wallet` and are never tool arguments. The browser-wallet bridge remains disabled.
 
@@ -1482,6 +1482,46 @@ The envelope version covers `schemaVersion`, `tool`, and `result`, not every nes
 | `page` | <code>number</code> | — |  | Page number, 1-indexed. Default: 1 |
 | `pageSize` | <code>number</code> | — |  | Records per page. Default: 20 |
 | `network` | <code>string</code> | — |  | Must be 'mainnet'. Default: mainnet |
+
+## Risk Alerts (read-only) (3)
+
+### `get_risk_alerts`
+
+**get_risk_alerts**
+- **Side effect**: 🟢 Read-only (Safe / Network Read)
+- **annotations**: idempotent: true · openWorld: true
+- **Description**: Read configured risk alerts and email-bound status for an explicit TRON address. Does not reveal an email or change alerts. Mainnet TRON only; requires operator-configured JUSTLEND_ALERT_API_URL. No wallet/signature/session is used. On query errors state is unknown, not an empty result. Alert writes are not supported.
+- **Output schema**: common structured envelope v1.0.0 (`schemaVersion`, `tool`, `result`)
+
+| Param | Type | Required | Default | Description |
+|-------|------|:--------:|---------|-------------|
+| `address` | <code>string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/)</code> | ✅ |  | TRON account to query; no wallet lookup |
+| `network` | <code>string</code> | — |  | Network; mainnet only |
+
+### `get_risk_alert_rules`
+
+**get_risk_alert_rules**
+- **Side effect**: 🟢 Read-only (Safe / Network Read)
+- **annotations**: idempotent: true · openWorld: true
+- **Description**: Read default risk alert thresholds. Missing/null values remain unavailable, not zero or usable defaults. Mainnet TRON only; requires operator-configured JUSTLEND_ALERT_API_URL. No wallet/signature/session is used. On query errors state is unknown, not an empty result. Alert writes are not supported.
+- **Output schema**: common structured envelope v1.0.0 (`schemaVersion`, `tool`, `result`)
+
+| Param | Type | Required | Default | Description |
+|-------|------|:--------:|---------|-------------|
+| `network` | <code>string</code> | — |  | Network; mainnet only |
+
+### `get_risk_alert_markets`
+
+**get_risk_alert_markets**
+- **Side effect**: 🟢 Read-only (Safe / Network Read)
+- **annotations**: idempotent: true · openWorld: true
+- **Description**: Read selectable V2 alert markets for an explicit TRON address, preserving unavailable markets and position status. Mainnet TRON only; requires operator-configured JUSTLEND_ALERT_API_URL. No wallet/signature/session is used. On query errors state is unknown, not an empty result. Alert writes are not supported.
+- **Output schema**: common structured envelope v1.0.0 (`schemaVersion`, `tool`, `result`)
+
+| Param | Type | Required | Default | Description |
+|-------|------|:--------:|---------|-------------|
+| `address` | <code>string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/)</code> | ✅ |  | TRON account to query; no wallet lookup |
+| `network` | <code>string</code> | — |  | Network; mainnet only |
 
 ---
 

@@ -566,8 +566,8 @@ describe("Tool Registration", () => {
     }
   });
 
-  it("declares the common outputSchema on all 104 tools", () => {
-    expect(registeredTools.size).toBe(104);
+  it("declares the common outputSchema on all 107 tools", () => {
+    expect(registeredTools.size).toBe(107);
     for (const [name, tool] of registeredTools) {
       expect(tool.config.outputSchema, `${name} should declare outputSchema`).toBeDefined();
       expect(tool.config.outputSchema.schemaVersion, `${name} schemaVersion`).toBeDefined();

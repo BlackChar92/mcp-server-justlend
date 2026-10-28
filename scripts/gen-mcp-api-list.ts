@@ -30,6 +30,7 @@ import { registerMoolahLiquidationTools } from "../src/core/tools/moolah-liquida
 import { registerMoolahDashboardTools } from "../src/core/tools/moolah-dashboard-tools.js";
 import { registerMoolahMiningTools } from "../src/core/tools/moolah-mining-tools.js";
 import { registerRecordsTools } from "../src/core/tools/records-tools.js";
+import { registerRiskAlertTools } from "../src/core/tools/risk-alert-tools.js";
 import { TOOL_OUTPUT_SCHEMA_VERSION, withStructuredToolOutputs } from "../src/core/tools/structured-output.js";
 import { sideEffect } from "./lib/tool-side-effects.js";
 import { describeField } from "./lib/schema-description.js";
@@ -92,6 +93,7 @@ const categories: Array<[string, (s: any) => void]> = [
   ["JustLend V2 (Moolah) — Mining, Rewards & Estimator", registerMoolahMiningTools],
   // Historical records (V1 + cross-cutting)
   ["Historical Records", registerRecordsTools],
+  ["Risk Alerts (read-only)", registerRiskAlertTools],
 ];
 
 for (const [label, register] of categories) {

@@ -29,6 +29,11 @@ describe("offline tool catalog execution effects", () => {
     expect(output).toContain("| `claimableRewards` | <code>number (min 0) &#124; null</code> | ✅ |");
     expect(output).toContain("| `note` | <code>string</code> | — |");
     expect(output).not.toContain("🟡 State-changing (Write)");
+    expect([...output.matchAll(/^### `/gm)]).toHaveLength(104);
+    expect([...output.matchAll(/^- \*\*Side effect\*\*: 🟢/gm)]).toHaveLength(63);
+    expect([...output.matchAll(/^- \*\*Side effect\*\*: 🔴/gm)]).toHaveLength(37);
+    expect([...output.matchAll(/^- \*\*Side effect\*\*: 🟡/gm)]).toHaveLength(4);
+    expect(output.trim()).toBe(readFileSync(new URL("../../mcp-api-list.md", import.meta.url), "utf8").trim());
     const readme = readFileSync(new URL("../../README.md", import.meta.url), "utf8");
     const names = new Set([...output.matchAll(/^### `([^`]+)`/gm)].map(match => match[1]));
     // Check actual recovery hints against the full registry, not a hand-maintained
@@ -62,5 +67,9 @@ describe("offline tool catalog execution effects", () => {
     expect(candidates).toContain("this filter does not establish liquidation eligibility");
     const quote = output.split("### `get_moolah_liquidation_quote`")[1].split("### ")[0];
     expect(quote).toContain("does not check borrower health");
+    expect(quote).toContain("does not check liquidation permissions");
+    const liquidate = output.split("### `moolah_liquidate`")[1].split("### ")[0];
+    expect(liquidate).toContain("core caller and public-liquidator market/borrower permissions");
+    expect(liquidate).toContain("If health or permissions are unknown, stop");
   }, 35_000);
 });

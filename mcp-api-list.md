@@ -1135,7 +1135,7 @@ The envelope version covers `schemaVersion`, `tool`, and `result`, not every nes
 **Get Pending Liquidations**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
-- **Description**: List Moolah liquidation candidates, including positions approaching the threshold. Risk can exceed 1; approaching 1 is a warning, not proof of liquidation eligibility. Rounded or stale API values do not establish current on-chain health. Verify current on-chain health for the borrower and obtain a fresh cost quote before acting. Use minRiskLevel=0.9 to include near-threshold candidates.
+- **Description**: List Moolah liquidation candidates, including positions approaching the threshold. Risk can exceed 1; approaching 1 is a warning, not proof of liquidation eligibility. Rounded or stale API values do not establish current on-chain health. Verify current on-chain health and liquidation permissions for the borrower and route, then obtain a fresh cost quote before acting. Use minRiskLevel=0.9 to include near-threshold candidates.
 - **Output schema**: common structured envelope v1.0.0 (`schemaVersion`, `tool`, `result`)
 
 | Param | Type | Required | Default | Description |
@@ -1153,7 +1153,7 @@ The envelope version covers `schemaVersion`, `tool`, and `result`, not every nes
 **Get Liquidation Quote**
 - **Side effect**: 🟢 Read-only (Safe / Network Read)
 - **annotations**: idempotent: true · openWorld: true
-- **Description**: Estimate the loan token cost to liquidate a position. Provide either seizedAssets (collateral to take) OR repaidShares (borrow shares to repay), not both. Returns the loan token amount needed for the supplied market and amounts. This cost quote does not check borrower health or establish liquidation eligibility; verify current on-chain health separately before calling moolah_liquidate.
+- **Description**: Estimate the loan token cost to liquidate a position. Provide either seizedAssets (collateral to take) OR repaidShares (borrow shares to repay), not both. Returns the loan token amount needed for the supplied market and amounts. This cost quote does not check borrower health and does not check liquidation permissions; verify both separately before calling moolah_liquidate.
 - **Output schema**: common structured envelope v1.0.0 (`schemaVersion`, `tool`, `result`)
 
 | Param | Type | Required | Default | Description |
@@ -1185,7 +1185,7 @@ The envelope version covers `schemaVersion`, `tool`, and `result`, not every nes
 **Moolah Liquidate**
 - **Side effect**: 🔴 On-chain transaction — may move assets or change allowances, collateral membership, votes, or protocol state. Builds a transaction, requires wallet signing, and may broadcast; explicit human confirmation (HITL) is required before execution.
 - **annotations**: idempotent: false · openWorld: true
-- **Description**: Liquidate an undercollateralized Moolah position. You must hold the loan token and have approved it via approve_liquidator_token. Provide EITHER seizedAssets (collateral to seize) OR repaidShares (borrow shares to repay), not both. Use get_moolah_liquidation_quote first to estimate the required loan token amount.
+- **Description**: Liquidate an undercollateralized JustLend V2 position. Before confirmation, verify current on-chain borrower health plus the route's core caller and public-liquidator market/borrower permissions. If health or permissions are unknown, stop; do not broaden a whitelist as a workaround. You must hold the loan token and have approved it via approve_liquidator_token. Provide EITHER seizedAssets (collateral to seize) OR repaidShares (borrow shares to repay), not both. Use get_moolah_liquidation_quote first to estimate the required loan token amount.
 - **Output schema**: common structured envelope v1.0.0 (`schemaVersion`, `tool`, `result`)
 
 | Param | Type | Required | Default | Description |

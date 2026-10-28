@@ -223,7 +223,7 @@ describe("sTRX eligibility and claim decisions", () => {
     expect(STRX_ELIGIBILITY_RESULT_SCHEMA.safeParse(result).success).toBe(true);
   });
 
-  it.each([null, undefined, "", " ", "bad", "NaN", "Infinity", -1, false, {}, "9".repeat(400)])(
+  it.each([null, undefined, "", " ", "bad", "NaN", "Infinity", -1, false, {}, "9".repeat(400), "0." + "0".repeat(400) + "1"])(
     "does not submit a claim for unavailable or invalid amount %j", async (amount) => {
       mockFetch.mockResolvedValueOnce(makeApiOk({ ...account, accountCanClaimAmount: amount }));
       await expect(claimStrxRewards()).rejects.toThrow("claim availability is unknown");
@@ -257,5 +257,41 @@ describe("sTRX eligibility and claim decisions", () => {
     expect(result).toMatchObject({ hasStakedTrx: null, stakedAmount: null, totalIncome: null,
       claimableRewards: null, withdrawnAmount: null, roundDetails: null, claimEligibility: "unknown", dataStatus: "partial" });
     expect(STRX_ELIGIBILITY_RESULT_SCHEMA.safeParse(result).success).toBe(true);
+  });
+
+  it.each([
+    [-1, null, "unknown"],
+    [0, 0, "ineligible"],
+    [1, 1, "eligible"],
+    [undefined, null, "unknown"],
+    [null, null, "unknown"],
+    ["", null, "unknown"],
+    ["0." + "0".repeat(400) + "1", null, "unknown"],
+  ])("preserves the eligibility meaning of amount %j", async (amount, expected, eligibility) => {
+    mockFetch.mockResolvedValueOnce(makeApiOk({ ...account, accountCanClaimAmount: amount }))
+      .mockResolvedValueOnce(makeApiOk(dashboard));
+    const result = await checkWithdrawalEligibility(address);
+    expect(result.claimableRewards).toBe(expected);
+    expect(result.claimEligibility).toBe(eligibility);
+    expect(result.unknownFields.includes("claimableRewards")).toBe(expected === null);
+    expect(STRX_ELIGIBILITY_RESULT_SCHEMA.safeParse(result).success).toBe(true);
+    expect(safeSend).not.toHaveBeenCalled();
+  });
+
+  it("classifies round expiry immediately before, at, and after the current millisecond", async () => {
+    const now = 1_800_000_000_000;
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+    try {
+      mockFetch.mockResolvedValueOnce(makeApiOk({ ...account,
+        roundDetails: [-1, 0, 1].map(delta => ({ endTimestamp: now + delta })) }))
+        .mockResolvedValueOnce(makeApiOk(dashboard));
+      const result = await checkWithdrawalEligibility(address);
+      expect(result.pendingUnstakeRounds).toBe(1);
+      expect(result.completedUnstakeRounds).toBe(2);
+      expect(result.hasCompletedWithdrawals).toBe(true);
+      expect(STRX_ELIGIBILITY_RESULT_SCHEMA.safeParse(result).success).toBe(true);
+    } finally {
+      clock.mockRestore();
+    }
   });
 });
